@@ -4,13 +4,25 @@ from os import path
 import traceback
 from collections import namedtuple
 from StringIO import StringIO
+import operator
 
 import picklemsg
 from probity import probfile
 from probity.backup import Backup
 from probity.events import FileEvent
 
-FileItem = namedtuple('FileItem', 'path checksum')
+FileItem = namedtuple('FileItem', 'path checksum size')
+
+def event_to_fileitem(event):
+    return FileItem(event.path, event.checksum, event.size)
+
+def fileitem_to_event(fileitem):
+    return FileEvent('_', fileitem.path, fileitem.checksum, fileitem.size)
+
+def dump_fileitems(file_ob, fileitem_bag):
+    with probfile.YamlDumper(file_ob) as yaml_dumper:
+        for fileitem in sorted(fileitem_bag, key=operator.attrgetter('path')):
+            yaml_dumper.write(fileitem_to_event(fileitem))
 
 class Server(object):
     def __init__(self, root_path, remote):
@@ -73,45 +85,56 @@ class Server(object):
         versions_path = path.join(self.root_path, 'versions')
         latest_version = max(int(v) for v in os.listdir(versions_path))
         remote_base_version = payload
-        assert remote_base_version == latest_version
 
         current_server_bag = set()
         with self.open_version_index(latest_version, 'rb') as f:
             for event in probfile.parse_file(f):
-                current_server_bag.add(FileItem(event.path, event.checksum))
+                current_server_bag.add(event_to_fileitem(event))
+
+        if remote_base_version == latest_version:
+            remote_outdated = False
+            old_server_bag = current_server_bag
+        else:
+            remote_outdated = True
+            old_server_bag = set()
+            with self.open_version_index(remote_base_version, 'rb') as f:
+                for event in probfile.parse_file(f):
+                    old_server_bag.add(event_to_fileitem(event))
 
         self.remote.send('waiting_for_files')
 
         temp_version_file = StringIO()
         client_bag = set()
 
-        with probfile.YamlDumper(temp_version_file) as temp_version:
-            while True:
-                msg, payload = self.remote.recv()
-                if msg == 'done':
-                    break
+        while True:
+            msg, payload = self.remote.recv()
+            if msg == 'done':
+                break
 
-                assert msg == 'file_meta'
+            assert msg == 'file_meta'
 
-                checksum = payload['checksum']
-                client_bag.add(FileItem(payload['path'], checksum))
-                temp_version.write(FileEvent('_syncit', payload['path'],
-                                             checksum, payload['size']))
+            checksum = payload['checksum']
+            client_bag.add(FileItem(payload['path'], checksum,
+                                    payload['size']))
 
-                if checksum in self.data_pool:
-                    self.remote.send('continue')
-                    continue
+            if checksum in self.data_pool:
+                self.remote.send('continue')
+                continue
 
-                self.remote.send('data')
-                with self.data_pool.store_data(checksum) as local_file:
-                    self.remote.recv_file(local_file)
+            self.remote.send('data')
+            with self.data_pool.store_data(checksum) as local_file:
+                self.remote.recv_file(local_file)
 
-        if current_server_bag == client_bag:
-            current_version = latest_version
+        if remote_outdated:
+            raise NotImplementedError
+
         else:
-            current_version = latest_version + 1
-            with self.open_version_index(current_version, 'wb') as f:
-                f.write(temp_version_file.getvalue())
+            if current_server_bag == client_bag:
+                current_version = latest_version
+            else:
+                current_version = latest_version + 1
+                with self.open_version_index(current_version, 'wb') as f:
+                    dump_fileitems(f, client_bag)
 
         self.remote.send('sync_complete', current_version)
 
