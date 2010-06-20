@@ -3,10 +3,12 @@ import os
 from os import path
 import traceback
 from collections import namedtuple
+from StringIO import StringIO
 
 import picklemsg
 from probity import probfile
 from probity.backup import Backup
+from probity.events import FileEvent
 
 CHUNK_SIZE = 64 * 1024 # 64 KB
 
@@ -85,34 +87,44 @@ class Server(object):
 
         self.remote.send('waiting_for_files')
 
+        temp_version_file = StringIO()
         remote_bag = set()
-        while True:
-            msg, payload = self.remote.recv()
-            if msg == 'done':
-                break
 
-            assert msg == 'file_meta'
+        with probfile.YamlDumper(temp_version_file) as temp_version:
+            while True:
+                msg, payload = self.remote.recv()
+                if msg == 'done':
+                    break
 
-            remote_bag.add(FileItem(payload['path'], payload['checksum']))
+                assert msg == 'file_meta'
 
-            if payload['checksum'] in self.data_pool:
-                self.remote.send('continue')
-                continue
+                checksum = payload['checksum']
+                remote_bag.add(FileItem(payload['path'], checksum))
+                temp_version.write(FileEvent('_syncit', payload['path'],
+                                             checksum, payload['size']))
 
-            self.remote.send('data')
-            with self.data_pool.store_data(payload['checksum']) as local_file:
-                while True:
-                    msg, payload = self.remote.recv()
-                    if msg == 'file_end':
-                        break
+                if checksum in self.data_pool:
+                    self.remote.send('continue')
+                    continue
 
-                    assert msg == 'file_chunk'
-                    local_file.write(payload)
+                self.remote.send('data')
+                with self.data_pool.store_data(checksum) as local_file:
+                    while True:
+                        msg, payload = self.remote.recv()
+                        if msg == 'file_end':
+                            break
 
-#        self.remote.send('debug', {'on_server': local_bag - remote_bag,
-#                                   'on_client': remote_bag - local_bag})
+                        assert msg == 'file_chunk'
+                        local_file.write(payload)
 
-        current_version = n
+        if local_bag == remote_bag:
+            current_version = n
+        else:
+            current_version = n + 1
+            version_index_path = path.join(versions_path, str(current_version))
+            with open(version_index_path, 'wb') as f:
+                f.write(temp_version_file.getvalue())
+
         self.remote.send('sync_complete', current_version)
 
 
