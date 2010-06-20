@@ -91,6 +91,11 @@ class Client(object):
             self.remote.send('file_end')
 
         self.remote.send('done')
+
+#        msg, payload = self.remote.recv()
+#        assert msg == 'debug'
+#        print payload
+
         msg, payload = self.remote.recv()
         assert msg == 'sync_complete'
         assert payload >= last_version

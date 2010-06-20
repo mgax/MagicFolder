@@ -2,12 +2,15 @@ import sys
 import os
 from os import path
 import traceback
+from collections import namedtuple
 
 import picklemsg
 from probity import probfile
 from probity.backup import Backup
 
 CHUNK_SIZE = 64 * 1024 # 64 KB
+
+FileItem = namedtuple('FileItem', 'path checksum')
 
 class Server(object):
     def __init__(self, root_path, remote):
@@ -74,16 +77,23 @@ class Server(object):
         n = max(int(v) for v in os.listdir(versions_path))
         assert n == payload
 
+        local_bag = set()
+        version_index_path = path.join(versions_path, str(n))
+        with open(version_index_path, 'rb') as f:
+            for event in probfile.parse_file(f):
+                local_bag.add(FileItem(event.path, event.checksum))
+
         self.remote.send('waiting_for_files')
 
+        remote_bag = set()
         while True:
             msg, payload = self.remote.recv()
             if msg == 'done':
-                current_version = n
-                self.remote.send('sync_complete', current_version)
                 break
 
             assert msg == 'file_meta'
+
+            remote_bag.add(FileItem(payload['path'], payload['checksum']))
 
             if payload['checksum'] in self.data_pool:
                 self.remote.send('continue')
@@ -98,6 +108,12 @@ class Server(object):
 
                     assert msg == 'file_chunk'
                     local_file.write(payload)
+
+#        self.remote.send('debug', {'on_server': local_bag - remote_bag,
+#                                   'on_client': remote_bag - local_bag})
+
+        current_version = n
+        self.remote.send('sync_complete', current_version)
 
 
 def main():
