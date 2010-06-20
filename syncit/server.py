@@ -1,8 +1,11 @@
+import sys
+from os import path
 import traceback
 import picklemsg
 
 class Server(object):
     def __init__(self, root_path, remote):
+        assert path.isdir(root_path)
         self.root_path = root_path
         self.remote = remote
 
@@ -34,7 +37,9 @@ class Server(object):
 
 
 def main():
-    import sys
     assert len(sys.argv) == 2
-    server = Server(sys.argv[1], picklemsg.Remote(sys.stdin, sys.stdout))
-    server.loop()
+
+    root_path = path.join(sys.argv[1], 'sandbox/var/repo')
+    remote = picklemsg.Remote(sys.stdin, sys.stdout)
+
+    Server(root_path, remote).loop()
