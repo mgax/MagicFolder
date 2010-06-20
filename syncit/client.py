@@ -4,6 +4,7 @@ from subprocess import Popen, PIPE
 
 import picklemsg
 from probity.walk import walk_path as probity_walk_path
+from server import CHUNK_SIZE
 
 class Client(object):
     def __init__(self, root_path, remote):
@@ -54,7 +55,8 @@ class Client(object):
                     local_file.write(payload)
 
     def merge_versions(self):
-        with open(path.join(self.private_path, 'last_sync'), 'rb') as f:
+        last_sync_path = path.join(self.private_path, 'last_sync')
+        with open(last_sync_path, 'rb') as f:
             last_version = int(f.read().strip())
 
         self.remote.send('merge', last_version)
@@ -74,16 +76,27 @@ class Client(object):
             }
             self.remote.send('file_meta', file_meta)
             msg, payload = self.remote.recv()
+
             if msg == 'continue':
                 continue
-            elif msg == 'data':
-                raise NotImplementedError
-            else:
-                assert False, "unexpected message %r" % msg
+
+            assert msg == 'data'
+            print 'sending data for %r' % file_path
+            with open(event.fs_path, 'rb') as data_file:
+                while True:
+                    chunk = data_file.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    self.remote.send('file_chunk', chunk)
+            self.remote.send('file_end')
 
         self.remote.send('done')
         msg, payload = self.remote.recv()
         assert msg == 'sync_complete'
+        assert payload >= last_version
+        print 'sync complete; now at version %d' % payload
+        with open(last_sync_path, 'wb') as f:
+            f.write("%d\n" % payload)
 
 
 def pipe_to_remote(remote_spec):

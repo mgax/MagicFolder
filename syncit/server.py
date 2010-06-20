@@ -5,6 +5,7 @@ import traceback
 
 import picklemsg
 from probity import probfile
+from probity.backup import Backup
 
 CHUNK_SIZE = 64 * 1024 # 64 KB
 
@@ -13,6 +14,7 @@ class Server(object):
         assert path.isdir(root_path)
         self.root_path = root_path
         self.remote = remote
+        self.data_pool = Backup(path.join(self.root_path, 'objects'))
 
     def loop(self):
         for msg, payload in self.remote:
@@ -63,7 +65,6 @@ class Server(object):
                         if not chunk:
                             break
                         self.remote.send('file_chunk', chunk)
-
                 self.remote.send('file_end')
 
         self.remote.send('done')
@@ -72,26 +73,31 @@ class Server(object):
         versions_path = path.join(self.root_path, 'versions')
         n = max(int(v) for v in os.listdir(versions_path))
         assert n == payload
+
         self.remote.send('waiting_for_files')
 
         while True:
             msg, payload = self.remote.recv()
             if msg == 'done':
-                self.remote.send('sync_complete')
+                current_version = n
+                self.remote.send('sync_complete', current_version)
                 break
 
             assert msg == 'file_meta'
 
-            checksum = payload['checksum']
-            h1, h2 = checksum[:2], checksum[2:]
-            data_path = path.join(self.root_path, 'objects', h1, h2)
-
-            if path.isfile(data_path):
+            if payload['checksum'] in self.data_pool:
                 self.remote.send('continue')
                 continue
 
-            raise NotImplementedError
-            #self.remote.send('data')
+            self.remote.send('data')
+            with self.data_pool.store_data(payload['checksum']) as local_file:
+                while True:
+                    msg, payload = self.remote.recv()
+                    if msg == 'file_end':
+                        break
+
+                    assert msg == 'file_chunk'
+                    local_file.write(payload)
 
 
 def main():
