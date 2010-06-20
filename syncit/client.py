@@ -24,7 +24,7 @@ class Client(object):
 
     def receive_full_version(self):
         self.remote.send('stream_latest_version')
-        print "saving latest version to %r" % self.root_path
+        #print "saving latest version to %r" % self.root_path
 
         msg, payload = self.remote.recv()
         assert msg == 'version_number'
@@ -37,7 +37,7 @@ class Client(object):
                 break
 
             assert msg == 'file_begin'
-            print payload['path']
+            #print payload['path']
 
             file_path = path.join(self.root_path, payload['path'])
             folder_path = path.dirname(file_path)
@@ -74,7 +74,7 @@ class Client(object):
                 continue
 
             assert msg == 'data'
-            print 'sending data for %r' % file_path
+            #print 'sending data for %r' % file_path
             with open(event.fs_path, 'rb') as data_file:
                 self.remote.send_file(data_file)
 
@@ -87,7 +87,7 @@ class Client(object):
         msg, payload = self.remote.recv()
         assert msg == 'sync_complete'
         assert payload >= last_version
-        print 'sync complete; now at version %d' % payload
+        #print 'sync complete; now at version %d' % payload
         with open(last_sync_path, 'wb') as f:
             f.write("%d\n" % payload)
 
