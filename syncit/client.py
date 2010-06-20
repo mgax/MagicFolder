@@ -76,8 +76,7 @@ def client_sync(root_path, remote):
 
 def pipe_to_remote(remote_spec):
     hostname, remote_path = remote_spec.split(':')
-    script_path = path.join(remote_path, 'sandbox/bin/syncserver')
-    child_args = ['ssh', hostname, script_path, remote_path]
+    child_args = ['ssh', hostname, 'syncit-server', remote_path]
     p = Popen(child_args, bufsize=4096, stdin=PIPE, stdout=PIPE, stderr=PIPE)
     return picklemsg.Remote(p.stdout, p.stdin)
 

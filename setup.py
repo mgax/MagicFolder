@@ -10,5 +10,5 @@ setup(
     packages=find_packages(),
     install_requires=['Probity'],
     entry_points={'console_scripts': ['syncit = syncit.client:main',
-                                      'syncserver = syncit.server:main']},
+                                      'syncit-server = syncit.server:main']},
 )

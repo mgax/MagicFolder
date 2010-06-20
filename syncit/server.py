@@ -129,7 +129,7 @@ def try_except_send_remote(remote):
 def main():
     assert len(sys.argv) == 2
 
-    root_path = path.join(sys.argv[1], 'sandbox/var/repo')
+    root_path = path.join(sys.argv[1])
     remote = picklemsg.Remote(sys.stdin, sys.stdout)
 
     with try_except_send_remote(remote):
