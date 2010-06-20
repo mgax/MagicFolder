@@ -61,25 +61,6 @@ class Server(object):
     def msg_ping(self, payload):
         self.remote.send('pong', "server at %r" % self.root_path)
 
-    def msg_stream_latest_version(self, payload):
-        versions_path = path.join(self.root_path, 'versions')
-        n = max(int(v) for v in os.listdir(versions_path))
-
-        self.remote.send('version_number', n)
-        with self.open_version_index(n, 'rb') as f:
-            for event in probfile.parse_file(f):
-                file_meta = {
-                    'path': event.path,
-                    'checksum': event.checksum,
-                    'size': event.size,
-                }
-                self.remote.send('file_begin', file_meta)
-                with open(object_path(self.root_path,
-                                      event.checksum), 'rb') as f:
-                    self.remote.send_file(f)
-
-        self.remote.send('done')
-
     def open_version_index(self, n, mode):
         return open(path.join(self.root_path, 'versions/%d' % n), mode)
 
@@ -99,9 +80,10 @@ class Server(object):
         else:
             remote_outdated = True
             old_server_bag = set()
-            with self.open_version_index(remote_base_version, 'rb') as f:
-                for event in probfile.parse_file(f):
-                    old_server_bag.add(event_to_fileitem(event))
+            if remote_base_version != 0:
+                with self.open_version_index(remote_base_version, 'rb') as f:
+                    for event in probfile.parse_file(f):
+                        old_server_bag.add(event_to_fileitem(event))
 
         self.remote.send('waiting_for_files')
 

@@ -12,45 +12,14 @@ class Client(object):
         self.remote = remote
 
     def sync(self):
-        if path.isdir(self.root_path):
-            assert path.isdir(self.private_path)
-            self.merge_versions()
-        else:
-            os.makedirs(self.private_path)
-            self.receive_full_version()
-
-        self.remote.send('quit')
-        assert self.remote.recv()[0] == 'bye'
-
-    def receive_full_version(self):
-        self.remote.send('stream_latest_version')
-        #print "saving latest version to %r" % self.root_path
-
-        msg, payload = self.remote.recv()
-        assert msg == 'version_number'
-        with open(path.join(self.private_path, 'last_sync'), 'wb') as f:
-            f.write("%d\n" % payload)
-
-        while True:
-            msg, payload = self.remote.recv()
-            if msg == 'done':
-                break
-
-            assert msg == 'file_begin'
-            #print payload['path']
-
-            file_path = path.join(self.root_path, payload['path'])
-            folder_path = path.dirname(file_path)
-            if not path.isdir(folder_path):
-                os.makedirs(folder_path)
-
-            with open(file_path, 'wb') as local_file:
-                self.remote.recv_file(local_file)
-
-    def merge_versions(self):
         last_sync_path = path.join(self.private_path, 'last_sync')
-        with open(last_sync_path, 'rb') as f:
-            last_version = int(f.read().strip())
+
+        if path.isdir(self.root_path):
+            with open(last_sync_path, 'rb') as f:
+                last_version = int(f.read().strip())
+        else:
+            last_version = 0
+            os.makedirs(self.private_path)
 
         self.remote.send('merge', last_version)
         msg, payload = self.remote.recv()
@@ -104,6 +73,9 @@ class Client(object):
         #print 'sync complete; now at version %d' % payload
         with open(last_sync_path, 'wb') as f:
             f.write("%d\n" % payload)
+
+        self.remote.send('quit')
+        assert self.remote.recv()[0] == 'bye'
 
 
 def pipe_to_remote(remote_spec):
