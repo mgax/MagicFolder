@@ -8,8 +8,8 @@ class Remote(object):
         self.out_pickler = pickle.Pickler(out_file, 2) # protocol version 2
         self.out_file = out_file
 
-    def send(self, msg):
-        self.out_pickler.dump(msg)
+    def send(self, msg, payload=None):
+        self.out_pickler.dump( (msg, payload) )
         self.out_file.flush()
         self.out_pickler.clear_memo()
 
@@ -20,8 +20,7 @@ class Remote(object):
         return self
 
     def next(self):
-        while True:
-            yield self.recv()
+        return self.recv()
 
 def pipe_to_remote(remote_spec):
     hostname, remote_path = remote_spec.split(':')

@@ -1,8 +1,9 @@
 import picklemsg
 
 def do_sync(root_path, remote):
-    print 'wow, got this far!'
-    remote.send("gigel")
+    remote.send("ping")
+    print remote.recv()
+    remote.send("quit")
     print remote.recv()
 
 def main():
