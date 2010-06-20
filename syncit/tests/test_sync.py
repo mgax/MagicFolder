@@ -9,8 +9,8 @@ from hashlib import sha1
 
 from probity.backup import Backup
 
-from syncit.client import Client
-from syncit.server import Server
+from syncit.client import client_sync
+from syncit.server import server_sync, try_except_send_remote
 from syncit.picklemsg import Remote
 
 def sha1hex(s):
@@ -31,10 +31,13 @@ class TestRemote(Remote):
         return msg, payload
 
 def do_server_loop(root_path, in_queue, out_queue):
-    Server(root_path, TestRemote(in_queue, out_queue)).loop()
+    remote = TestRemote(in_queue, out_queue)
+    with try_except_send_remote(remote):
+        server_sync(root_path, remote)
 
 def do_client_sync(root_path, in_queue, out_queue):
-    Client(root_path, TestRemote(in_queue, out_queue)).sync()
+    remote = TestRemote(in_queue, out_queue)
+    client_sync(root_path, remote)
 
 def do_client_server(client_root, server_root):
     c2s = Queue()

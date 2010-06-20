@@ -5,6 +5,7 @@ import traceback
 from collections import namedtuple
 from StringIO import StringIO
 import operator
+from contextlib import contextmanager
 
 import picklemsg
 from probity import probfile
@@ -28,116 +29,102 @@ def object_path(root_path, checksum):
     h1, h2 = checksum[:2], checksum[2:]
     return path.join(root_path, 'objects', h1, h2)
 
-class Server(object):
-    def __init__(self, root_path, remote):
-        assert path.isdir(root_path)
-        self.root_path = root_path
-        self.remote = remote
-        self.data_pool = Backup(path.join(self.root_path, 'objects'))
+def server_sync(root_path, remote):
+    assert path.isdir(root_path)
+    data_pool = Backup(path.join(root_path, 'objects'))
 
-    def loop(self):
-        for msg, payload in self.remote:
-            try:
-                if msg == 'quit':
-                    self.remote.send('bye')
-                    return
+    def open_version_index(n, mode):
+        return open(path.join(root_path, 'versions/%d' % n), mode)
 
-                func_name = 'msg_%s' % msg
-                if hasattr(self, func_name):
-                    method = getattr(self, func_name)
-                    if callable(method):
-                        method(payload)
-                        continue
+    msg, payload = remote.recv()
+    assert msg == 'merge'
 
-                raise ValueError("unknown message %r" % msg)
+    versions_path = path.join(root_path, 'versions')
+    latest_version = max(int(v) for v in os.listdir(versions_path))
+    remote_base_version = payload
 
-            except:
-                try:
-                    error_report = traceback.format_exc()
-                except:
-                    error_report = "[exception while formatting traceback]"
-                self.remote.send('error', error_report)
+    current_server_bag = set()
+    with open_version_index(latest_version, 'rb') as f:
+        for event in probfile.parse_file(f):
+            current_server_bag.add(event_to_fileitem(event))
 
-    def msg_ping(self, payload):
-        self.remote.send('pong', "server at %r" % self.root_path)
+    if remote_base_version == latest_version:
+        remote_outdated = False
+        old_server_bag = current_server_bag
+    else:
+        remote_outdated = True
+        old_server_bag = set()
+        if remote_base_version != 0:
+            with open_version_index(remote_base_version, 'rb') as f:
+                for event in probfile.parse_file(f):
+                    old_server_bag.add(event_to_fileitem(event))
 
-    def open_version_index(self, n, mode):
-        return open(path.join(self.root_path, 'versions/%d' % n), mode)
+    remote.send('waiting_for_files')
 
-    def msg_merge(self, payload):
-        versions_path = path.join(self.root_path, 'versions')
-        latest_version = max(int(v) for v in os.listdir(versions_path))
-        remote_base_version = payload
+    temp_version_file = StringIO()
+    client_bag = set()
 
-        current_server_bag = set()
-        with self.open_version_index(latest_version, 'rb') as f:
-            for event in probfile.parse_file(f):
-                current_server_bag.add(event_to_fileitem(event))
+    while True:
+        msg, payload = remote.recv()
+        if msg == 'done':
+            break
 
-        if remote_base_version == latest_version:
-            remote_outdated = False
-            old_server_bag = current_server_bag
-        else:
-            remote_outdated = True
-            old_server_bag = set()
-            if remote_base_version != 0:
-                with self.open_version_index(remote_base_version, 'rb') as f:
-                    for event in probfile.parse_file(f):
-                        old_server_bag.add(event_to_fileitem(event))
+        assert msg == 'file_meta'
 
-        self.remote.send('waiting_for_files')
+        checksum = payload['checksum']
+        client_bag.add(FileItem(payload['path'], checksum, payload['size']))
 
-        temp_version_file = StringIO()
-        client_bag = set()
+        if checksum in data_pool:
+            remote.send('continue')
+            continue
 
-        while True:
-            msg, payload = self.remote.recv()
-            if msg == 'done':
-                break
+        remote.send('data')
+        with data_pool.store_data(checksum) as local_file:
+            remote.recv_file(local_file)
 
-            assert msg == 'file_meta'
+    if remote_outdated:
+        assert old_server_bag == client_bag
+        current_version = latest_version
 
-            checksum = payload['checksum']
-            client_bag.add(FileItem(payload['path'], checksum,
-                                    payload['size']))
+        for new_file in current_server_bag - client_bag:
+            event = fileitem_to_event(new_file)
+            file_meta = {
+                'path': event.path,
+                'checksum': event.checksum,
+                'size': event.size,
+            }
+            remote.send('file_begin', file_meta)
+            with open(object_path(root_path, event.checksum), 'rb') as f:
+                remote.send_file(f)
 
-            if checksum in self.data_pool:
-                self.remote.send('continue')
-                continue
+        for removed_file in client_bag - current_server_bag:
+            remote.send('file_remove', removed_file.path)
 
-            self.remote.send('data')
-            with self.data_pool.store_data(checksum) as local_file:
-                self.remote.recv_file(local_file)
-
-        if remote_outdated:
-            assert old_server_bag == client_bag
+    else:
+        if current_server_bag == client_bag:
             current_version = latest_version
-
-            for new_file in current_server_bag - client_bag:
-                event = fileitem_to_event(new_file)
-                file_meta = {
-                    'path': event.path,
-                    'checksum': event.checksum,
-                    'size': event.size,
-                }
-                self.remote.send('file_begin', file_meta)
-                with open(object_path(self.root_path,
-                                      event.checksum), 'rb') as f:
-                    self.remote.send_file(f)
-
-            for removed_file in client_bag - current_server_bag:
-                self.remote.send('file_remove', removed_file.path)
-
         else:
-            if current_server_bag == client_bag:
-                current_version = latest_version
-            else:
-                current_version = latest_version + 1
-                with self.open_version_index(current_version, 'wb') as f:
-                    dump_fileitems(f, client_bag)
+            current_version = latest_version + 1
+            with open_version_index(current_version, 'wb') as f:
+                dump_fileitems(f, client_bag)
 
-        self.remote.send('sync_complete', current_version)
+    remote.send('sync_complete', current_version)
 
+    msg, payload = remote.recv()
+    assert msg == 'quit'
+    remote.send('bye')
+
+
+@contextmanager
+def try_except_send_remote(remote):
+    try:
+        yield
+    except:
+        try:
+            error_report = traceback.format_exc()
+        except:
+            error_report = "[exception while formatting traceback]"
+        remote.send('error', error_report)
 
 def main():
     assert len(sys.argv) == 2
@@ -145,4 +132,5 @@ def main():
     root_path = path.join(sys.argv[1], 'sandbox/var/repo')
     remote = picklemsg.Remote(sys.stdin, sys.stdout)
 
-    Server(root_path, remote).loop()
+    with try_except_send_remote(remote):
+        server_sync(root_path, remote)
