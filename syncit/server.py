@@ -48,10 +48,9 @@ class Server(object):
     def msg_stream_latest_version(self, payload):
         versions_path = path.join(self.root_path, 'versions')
         n = max(int(v) for v in os.listdir(versions_path))
-        version_index_path = path.join(versions_path, str(n))
 
         self.remote.send('version_number', n)
-        with open(version_index_path, 'rb') as f:
+        with self.open_version_index(n, 'rb') as f:
             for event in probfile.parse_file(f):
                 file_meta = {
                     'path': event.path,
@@ -67,21 +66,24 @@ class Server(object):
 
         self.remote.send('done')
 
+    def open_version_index(self, n, mode):
+        return open(path.join(self.root_path, 'versions/%d' % n), mode)
+
     def msg_merge(self, payload):
         versions_path = path.join(self.root_path, 'versions')
-        n = max(int(v) for v in os.listdir(versions_path))
-        assert n == payload
+        latest_version = max(int(v) for v in os.listdir(versions_path))
+        remote_base_version = payload
+        assert remote_base_version == latest_version
 
-        local_bag = set()
-        version_index_path = path.join(versions_path, str(n))
-        with open(version_index_path, 'rb') as f:
+        current_server_bag = set()
+        with self.open_version_index(latest_version, 'rb') as f:
             for event in probfile.parse_file(f):
-                local_bag.add(FileItem(event.path, event.checksum))
+                current_server_bag.add(FileItem(event.path, event.checksum))
 
         self.remote.send('waiting_for_files')
 
         temp_version_file = StringIO()
-        remote_bag = set()
+        client_bag = set()
 
         with probfile.YamlDumper(temp_version_file) as temp_version:
             while True:
@@ -92,7 +94,7 @@ class Server(object):
                 assert msg == 'file_meta'
 
                 checksum = payload['checksum']
-                remote_bag.add(FileItem(payload['path'], checksum))
+                client_bag.add(FileItem(payload['path'], checksum))
                 temp_version.write(FileEvent('_syncit', payload['path'],
                                              checksum, payload['size']))
 
@@ -104,12 +106,11 @@ class Server(object):
                 with self.data_pool.store_data(checksum) as local_file:
                     self.remote.recv_file(local_file)
 
-        if local_bag == remote_bag:
-            current_version = n
+        if current_server_bag == client_bag:
+            current_version = latest_version
         else:
-            current_version = n + 1
-            version_index_path = path.join(versions_path, str(current_version))
-            with open(version_index_path, 'wb') as f:
+            current_version = latest_version + 1
+            with self.open_version_index(current_version, 'wb') as f:
                 f.write(temp_version_file.getvalue())
 
         self.remote.send('sync_complete', current_version)
