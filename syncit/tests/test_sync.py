@@ -87,6 +87,31 @@ class SyncTest(unittest.TestCase):
         with open(path.join(self.client_root, 'path_two'), 'rb') as f:
             self.assertEqual(f.read(), "hi there")
 
+    def test_upload_changes(self):
+        self.server_fixtures({
+            'path_one': "hello world",
+            'path_two': "hi there",
+        })
+        self.run_loop()
+
+        data_one = "hello world"
+        data_three = "me three"
+        with open(path.join(self.client_root, 'path_three'), 'wb') as f:
+            f.write(data_three)
+        os.unlink(path.join(self.client_root, 'path_one'))
+        self.run_loop()
+
+        self.assertEqual(set(os.listdir(self.server_versions_path)),
+                         set(['1', '2']))
+        with open(path.join(self.server_versions_path, '2'), 'rb') as f:
+            version_2_index = f.read()
+        new_file_line = ("path_three: {sha1: %s, size: %d}\n" %
+                         (sha1hex(data_three), len(data_three)))
+        removed_file_line = ("path_one: {sha1: %s, size: %d}\n" %
+                             (sha1hex(data_one), len(data_one)))
+        self.assertTrue(new_file_line in version_2_index)
+        self.assertTrue(removed_file_line not in version_2_index)
+
 
 if __name__ == '__main__':
     unittest.main()
