@@ -54,7 +54,36 @@ class Client(object):
                     local_file.write(payload)
 
     def merge_versions(self):
-        raise NotImplementedError
+        with open(path.join(self.private_path, 'last_sync'), 'rb') as f:
+            last_version = int(f.read().strip())
+
+        self.remote.send('merge', last_version)
+        msg, payload = self.remote.recv()
+        assert msg == 'waiting_for_files'
+
+        root_name = path.basename(self.root_path)
+        for event in probity_walk_path(self.root_path):
+            file_path = event.path.split('/', 1)[1]
+            if file_path.startswith('.syncit/'):
+                continue
+
+            file_meta = {
+                'path': file_path,
+                'checksum': event.checksum,
+                'size': event.size,
+            }
+            self.remote.send('file_meta', file_meta)
+            msg, payload = self.remote.recv()
+            if msg == 'continue':
+                continue
+            elif msg == 'data':
+                raise NotImplementedError
+            else:
+                assert False, "unexpected message %r" % msg
+
+        self.remote.send('done')
+        msg, payload = self.remote.recv()
+        assert msg == 'sync_complete'
 
 
 def pipe_to_remote(remote_spec):

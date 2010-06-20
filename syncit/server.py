@@ -68,6 +68,31 @@ class Server(object):
 
         self.remote.send('done')
 
+    def msg_merge(self, payload):
+        versions_path = path.join(self.root_path, 'versions')
+        n = max(int(v) for v in os.listdir(versions_path))
+        assert n == payload
+        self.remote.send('waiting_for_files')
+
+        while True:
+            msg, payload = self.remote.recv()
+            if msg == 'done':
+                self.remote.send('sync_complete')
+                break
+
+            assert msg == 'file_meta'
+
+            checksum = payload['checksum']
+            h1, h2 = checksum[:2], checksum[2:]
+            data_path = path.join(self.root_path, 'objects', h1, h2)
+
+            if path.isfile(data_path):
+                self.remote.send('continue')
+                continue
+
+            raise NotImplementedError
+            #self.remote.send('data')
+
 
 def main():
     assert len(sys.argv) == 2
