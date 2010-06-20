@@ -10,8 +10,6 @@ from probity import probfile
 from probity.backup import Backup
 from probity.events import FileEvent
 
-CHUNK_SIZE = 64 * 1024 # 64 KB
-
 FileItem = namedtuple('FileItem', 'path checksum')
 
 class Server(object):
@@ -65,12 +63,7 @@ class Server(object):
                 h1, h2 = event.checksum[:2], event.checksum[2:]
                 data_path = path.join(self.root_path, 'objects', h1, h2)
                 with open(data_path, 'rb') as data_file:
-                    while True:
-                        chunk = data_file.read(CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        self.remote.send('file_chunk', chunk)
-                self.remote.send('file_end')
+                    self.remote.send_file(data_file)
 
         self.remote.send('done')
 
@@ -109,13 +102,7 @@ class Server(object):
 
                 self.remote.send('data')
                 with self.data_pool.store_data(checksum) as local_file:
-                    while True:
-                        msg, payload = self.remote.recv()
-                        if msg == 'file_end':
-                            break
-
-                        assert msg == 'file_chunk'
-                        local_file.write(payload)
+                    self.remote.recv_file(local_file)
 
         if local_bag == remote_bag:
             current_version = n

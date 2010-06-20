@@ -4,7 +4,6 @@ from subprocess import Popen, PIPE
 
 import picklemsg
 from probity.walk import walk_path as probity_walk_path
-from server import CHUNK_SIZE
 
 class Client(object):
     def __init__(self, root_path, remote):
@@ -46,13 +45,7 @@ class Client(object):
                 os.makedirs(folder_path)
 
             with open(file_path, 'wb') as local_file:
-                while True:
-                    msg, payload = self.remote.recv()
-                    if msg == 'file_end':
-                        break
-
-                    assert msg == 'file_chunk'
-                    local_file.write(payload)
+                self.remote.recv_file(local_file)
 
     def merge_versions(self):
         last_sync_path = path.join(self.private_path, 'last_sync')
@@ -83,12 +76,7 @@ class Client(object):
             assert msg == 'data'
             print 'sending data for %r' % file_path
             with open(event.fs_path, 'rb') as data_file:
-                while True:
-                    chunk = data_file.read(CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    self.remote.send('file_chunk', chunk)
-            self.remote.send('file_end')
+                self.remote.send_file(data_file)
 
         self.remote.send('done')
 
