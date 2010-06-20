@@ -1,7 +1,12 @@
 import sys
+import os
 from os import path
 import traceback
+
 import picklemsg
+from probity import probfile
+
+CHUNK_SIZE = 64 * 1024 # 64 KB
 
 class Server(object):
     def __init__(self, root_path, remote):
@@ -13,7 +18,7 @@ class Server(object):
         for msg, payload in self.remote:
             try:
                 if msg == 'quit':
-                    self.remote.send("bye")
+                    self.remote.send('bye')
                     return
 
                 func_name = 'msg_%s' % msg
@@ -30,10 +35,38 @@ class Server(object):
                     error_report = traceback.format_exc()
                 except:
                     error_report = "[exception while formatting traceback]"
-                self.remote.send("error", error_report)
+                self.remote.send('error', error_report)
 
     def msg_ping(self, payload):
-        self.remote.send("pong", "server at %r" % self.root_path)
+        self.remote.send('pong', "server at %r" % self.root_path)
+
+    def msg_stream_latest_version(self, payload):
+        versions_path = path.join(self.root_path, 'versions')
+        n = max(int(v) for v in os.listdir(versions_path))
+        version_index_path = path.join(versions_path, str(n))
+
+        self.remote.send('version_number', n)
+        with open(version_index_path, 'rb') as f:
+            for event in probfile.parse_file(f):
+                file_meta = {
+                    'path': event.path,
+                    'checksum': event.checksum,
+                    'size': event.size,
+                }
+                self.remote.send('file_begin', file_meta)
+
+                h1, h2 = event.checksum[:2], event.checksum[2:]
+                data_path = path.join(self.root_path, 'objects', h1, h2)
+                with open(data_path, 'rb') as data_file:
+                    while True:
+                        chunk = data_file.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        self.remote.send('file_chunk', chunk)
+
+                self.remote.send('file_end')
+
+        self.remote.send('done')
 
 
 def main():
