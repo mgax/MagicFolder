@@ -80,12 +80,26 @@ class Client(object):
 
         self.remote.send('done')
 
-#        msg, payload = self.remote.recv()
-#        assert msg == 'debug'
-#        print payload
+        while True:
+            msg, payload = self.remote.recv()
+            if msg == 'sync_complete':
+                break
 
-        msg, payload = self.remote.recv()
-        assert msg == 'sync_complete'
+            elif msg == 'file_begin':
+                file_path = path.join(self.root_path, payload['path'])
+                folder_path = path.dirname(file_path)
+                if not path.isdir(folder_path):
+                    os.makedirs(folder_path)
+
+                with open(file_path, 'wb') as local_file:
+                    self.remote.recv_file(local_file)
+
+            elif msg == 'file_remove':
+                os.unlink(path.join(self.root_path, payload))
+
+            else:
+                assert False, 'unexpected message %r' % msg
+
         assert payload >= last_version
         #print 'sync complete; now at version %d' % payload
         with open(last_sync_path, 'wb') as f:

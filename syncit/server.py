@@ -24,6 +24,10 @@ def dump_fileitems(file_ob, fileitem_bag):
         for fileitem in sorted(fileitem_bag, key=operator.attrgetter('path')):
             yaml_dumper.write(fileitem_to_event(fileitem))
 
+def object_path(root_path, checksum):
+    h1, h2 = checksum[:2], checksum[2:]
+    return path.join(root_path, 'objects', h1, h2)
+
 class Server(object):
     def __init__(self, root_path, remote):
         assert path.isdir(root_path)
@@ -70,11 +74,9 @@ class Server(object):
                     'size': event.size,
                 }
                 self.remote.send('file_begin', file_meta)
-
-                h1, h2 = event.checksum[:2], event.checksum[2:]
-                data_path = path.join(self.root_path, 'objects', h1, h2)
-                with open(data_path, 'rb') as data_file:
-                    self.remote.send_file(data_file)
+                with open(object_path(self.root_path,
+                                      event.checksum), 'rb') as f:
+                    self.remote.send_file(f)
 
         self.remote.send('done')
 
@@ -126,7 +128,23 @@ class Server(object):
                 self.remote.recv_file(local_file)
 
         if remote_outdated:
-            raise NotImplementedError
+            assert old_server_bag == client_bag
+            current_version = latest_version
+
+            for new_file in current_server_bag - client_bag:
+                event = fileitem_to_event(new_file)
+                file_meta = {
+                    'path': event.path,
+                    'checksum': event.checksum,
+                    'size': event.size,
+                }
+                self.remote.send('file_begin', file_meta)
+                with open(object_path(self.root_path,
+                                      event.checksum), 'rb') as f:
+                    self.remote.send_file(f)
+
+            for removed_file in client_bag - current_server_bag:
+                self.remote.send('file_remove', removed_file.path)
 
         else:
             if current_server_bag == client_bag:

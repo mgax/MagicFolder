@@ -62,9 +62,10 @@ class SyncTest(unittest.TestCase):
         shutil.rmtree(self.client_tmp_path)
         shutil.rmtree(self.server_root)
 
-    def server_fixtures(self, files):
+    def server_fixtures(self, version, files):
         server_objs = Backup(self.server_objects_path)
-        with open(path.join(self.server_versions_path, '1'), 'wb') as index_f:
+        index_path = path.join(self.server_versions_path, str(version))
+        with open(index_path, 'wb') as index_f:
             for file_path, file_data in files.iteritems():
                 index_f.write('%s: {sha1: %s, size: %d}\n' %
                               (file_path, sha1hex(file_data), len(file_data)))
@@ -72,7 +73,7 @@ class SyncTest(unittest.TestCase):
                     data_f.write(file_data)
 
     def test_initial(self):
-        self.server_fixtures({
+        self.server_fixtures(1, {
             'path_one': "hello world",
             'path_two': "hi there",
         })
@@ -88,7 +89,7 @@ class SyncTest(unittest.TestCase):
             self.assertEqual(f.read(), "hi there")
 
     def test_upload_changes(self):
-        self.server_fixtures({
+        self.server_fixtures(1, {
             'path_one': "hello world",
             'path_two': "hi there",
         })
@@ -111,6 +112,28 @@ class SyncTest(unittest.TestCase):
                              (sha1hex(data_one), len(data_one)))
         self.assertTrue(new_file_line in version_2_index)
         self.assertTrue(removed_file_line not in version_2_index)
+
+    def test_receive_changes(self):
+        self.server_fixtures(1, {
+            'path_one': "hello world",
+            'path_two': "hi there",
+        })
+        self.run_loop()
+
+        self.server_fixtures(2, {
+            'path_one': "hello world",
+            'path_three': "me three",
+        })
+        self.run_loop()
+
+        self.assertEqual(set(os.listdir(self.client_root)),
+                         set(['.syncit', 'path_one', 'path_three']))
+        with open(path.join(self.client_root, '.syncit/last_sync'), 'rb') as f:
+            self.assertEqual(f.read(), "2\n")
+        with open(path.join(self.client_root, 'path_one'), 'rb') as f:
+            self.assertEqual(f.read(), "hello world")
+        with open(path.join(self.client_root, 'path_three'), 'rb') as f:
+            self.assertEqual(f.read(), "me three")
 
 
 if __name__ == '__main__':
