@@ -105,11 +105,14 @@ def pipe_to_remote(remote_spec):
 
 def main():
     import sys
-    assert len(sys.argv) == 3
+    assert len(sys.argv) == 2
+    assert sys.argv[1] == 'sync'
 
     logging.basicConfig(level=logging.DEBUG)
 
-    root_path = sys.argv[1]
-    remote = pipe_to_remote(sys.argv[2])
+    root_path = os.getcwd()
+    with open(path.join(root_path, '.mf/remote'), 'rb') as f:
+        remote_url = f.read().strip()
+    remote = pipe_to_remote(remote_url)
 
     client_sync(root_path, remote)
