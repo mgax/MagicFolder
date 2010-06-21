@@ -4,12 +4,14 @@ from subprocess import Popen, PIPE
 import logging
 from time import time
 
+import argparse
+
 import picklemsg
-from probity.walk import walk_path as probity_walk_path
+from checksum import repo_file_events
 
 log = logging.getLogger('magicfolder.client')
 
-def client_sync(root_path, remote):
+def client_sync(root_path, remote, use_cache=False):
     private_path = path.join(root_path, '.mf')
 
     last_sync_path = path.join(private_path, 'last_sync')
@@ -33,19 +35,15 @@ def client_sync(root_path, remote):
     time0 = time()
 
     root_name = path.basename(root_path)
-    for event in probity_walk_path(root_path):
-        file_path = event.path.split('/', 1)[1]
-        if file_path.startswith('.mf/'):
-            continue
-
+    for file_item in repo_file_events(root_path, use_cache):
         files_count += 1
         if files_count % 100 == 0:
             log.debug("still listing local files, %d so far", files_count)
 
         file_meta = {
-            'path': file_path,
-            'checksum': event.checksum,
-            'size': event.size,
+            'path': file_item.path,
+            'checksum': file_item.checksum,
+            'size': file_item.size,
         }
         remote.send('file_meta', file_meta)
         msg, payload = remote.recv()
@@ -55,7 +53,7 @@ def client_sync(root_path, remote):
 
         assert msg == 'data'
         #print 'sending data for %r' % file_path
-        with open(event.fs_path, 'rb') as data_file:
+        with open(path.join(root_path, file_item.path), 'rb') as data_file:
             remote.send_file(data_file)
             bytes_count += data_file.tell()
 
@@ -103,16 +101,27 @@ def pipe_to_remote(remote_spec):
     p = Popen(child_args, bufsize=4096, stdin=PIPE, stdout=PIPE, stderr=PIPE)
     return picklemsg.Remote(p.stdout, p.stdin)
 
-def main():
-    import sys
-    assert len(sys.argv) == 2
-    assert sys.argv[1] == 'sync'
+def parse_args():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='subcmd')
 
+    sync_parser = subparsers.add_parser('sync',
+        help="synchronize with server")
+    sync_parser.add_argument("-t", "--trust",
+        action="store_true", dest="use_cache", default=False,
+        help="only check timestamp and size")
+
+    args = parser.parse_args()
+    assert args.subcmd == 'sync'
+    return args
+
+def main():
     logging.basicConfig(level=logging.DEBUG)
 
+    args = parse_args()
     root_path = os.getcwd()
     with open(path.join(root_path, '.mf/remote'), 'rb') as f:
         remote_url = f.read().strip()
     remote = pipe_to_remote(remote_url)
 
-    client_sync(root_path, remote)
+    client_sync(root_path, remote, use_cache=args.use_cache)

@@ -8,7 +8,7 @@ setup(
     author="Alex Morega",
     author_email="public@grep.ro",
     packages=find_packages(),
-    install_requires=['Probity'],
+    install_requires=['Probity', 'argparse'],
     entry_points={'console_scripts': ['mf = magicfolder.client:main',
                                       'mf-server = magicfolder.server:main']},
 )

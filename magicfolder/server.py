@@ -2,20 +2,19 @@ import sys
 import os
 from os import path
 import traceback
-from collections import namedtuple
 from StringIO import StringIO
 import operator
 from contextlib import contextmanager
 
-import picklemsg
 from probity import probfile
 from probity.backup import Backup
 from probity.events import FileEvent
 
-FileItem = namedtuple('FileItem', 'path checksum size')
+import picklemsg
+from checksum import FileItem
 
 def event_to_fileitem(event):
-    return FileItem(event.path, event.checksum, event.size)
+    return FileItem(event.path, event.checksum, event.size, 0)
 
 def fileitem_to_event(fileitem):
     return FileEvent('_', fileitem.path, fileitem.checksum, fileitem.size)
@@ -72,7 +71,7 @@ def server_sync(root_path, remote):
         assert msg == 'file_meta'
 
         checksum = payload['checksum']
-        client_bag.add(FileItem(payload['path'], checksum, payload['size']))
+        client_bag.add(FileItem(payload['path'], checksum, payload['size'], 0))
 
         if checksum in data_pool:
             remote.send('continue')
