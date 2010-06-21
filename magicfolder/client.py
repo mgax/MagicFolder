@@ -7,10 +7,10 @@ from time import time
 import picklemsg
 from probity.walk import walk_path as probity_walk_path
 
-log = logging.getLogger('syncit.client')
+log = logging.getLogger('magicfolder.client')
 
 def client_sync(root_path, remote):
-    private_path = path.join(root_path, '.syncit')
+    private_path = path.join(root_path, '.mf')
 
     last_sync_path = path.join(private_path, 'last_sync')
 
@@ -35,7 +35,7 @@ def client_sync(root_path, remote):
     root_name = path.basename(root_path)
     for event in probity_walk_path(root_path):
         file_path = event.path.split('/', 1)[1]
-        if file_path.startswith('.syncit/'):
+        if file_path.startswith('.mf/'):
             continue
 
         files_count += 1
@@ -99,7 +99,7 @@ def client_sync(root_path, remote):
 
 def pipe_to_remote(remote_spec):
     hostname, remote_path = remote_spec.split(':')
-    child_args = ['ssh', hostname, 'syncit-server', remote_path]
+    child_args = ['ssh', hostname, 'mf-server', remote_path]
     p = Popen(child_args, bufsize=4096, stdin=PIPE, stdout=PIPE, stderr=PIPE)
     return picklemsg.Remote(p.stdout, p.stdin)
 

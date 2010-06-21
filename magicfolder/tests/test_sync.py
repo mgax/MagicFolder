@@ -9,9 +9,9 @@ from hashlib import sha1
 
 from probity.backup import Backup
 
-from syncit.client import client_sync
-from syncit.server import server_sync, try_except_send_remote
-from syncit.picklemsg import Remote
+from magicfolder.client import client_sync
+from magicfolder.server import server_sync, try_except_send_remote
+from magicfolder.picklemsg import Remote
 
 def sha1hex(s):
     return sha1(s).hexdigest()
@@ -83,8 +83,8 @@ class SyncTest(unittest.TestCase):
         self.run_loop()
 
         self.assertEqual(set(os.listdir(self.client_root)),
-                         set(['.syncit', 'path_one', 'path_two']))
-        with open(path.join(self.client_root, '.syncit/last_sync'), 'rb') as f:
+                         set(['.mf', 'path_one', 'path_two']))
+        with open(path.join(self.client_root, '.mf/last_sync'), 'rb') as f:
             self.assertEqual(f.read(), "1\n")
         with open(path.join(self.client_root, 'path_one'), 'rb') as f:
             self.assertEqual(f.read(), "hello world")
@@ -130,8 +130,8 @@ class SyncTest(unittest.TestCase):
         self.run_loop()
 
         self.assertEqual(set(os.listdir(self.client_root)),
-                         set(['.syncit', 'path_one', 'path_three']))
-        with open(path.join(self.client_root, '.syncit/last_sync'), 'rb') as f:
+                         set(['.mf', 'path_one', 'path_three']))
+        with open(path.join(self.client_root, '.mf/last_sync'), 'rb') as f:
             self.assertEqual(f.read(), "2\n")
         with open(path.join(self.client_root, 'path_one'), 'rb') as f:
             self.assertEqual(f.read(), "hello world")
