@@ -28,6 +28,12 @@ def object_path(root_path, checksum):
     h1, h2 = checksum[:2], checksum[2:]
     return path.join(root_path, 'objects', h1, h2)
 
+def server_init(root_path):
+    os.mkdir(path.join(root_path, 'objects'))
+    os.mkdir(path.join(root_path, 'versions'))
+    with open(path.join(root_path, 'versions', '0'), 'wb') as f:
+        pass
+
 def server_sync(root_path, remote):
     assert path.isdir(root_path)
     data_pool = Backup(path.join(root_path, 'objects'))
