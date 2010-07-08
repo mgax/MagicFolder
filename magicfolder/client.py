@@ -12,6 +12,13 @@ from checksum import repo_file_events
 
 log = logging.getLogger('magicfolder.client')
 
+def client_init(root_path, remote_url):
+    os.mkdir(path.join(root_path, '.mf'))
+    with open(path.join(root_path, '.mf', 'remote'), 'wb') as f:
+        f.write("%s\n" % remote_url)
+    with open(path.join(root_path, '.mf', 'last_sync'), 'wb') as f:
+        f.write("0\n")
+
 class ClientRepo(object):
     def __init__(self, root_path):
         self.root_path = root_path
@@ -106,9 +113,6 @@ class ClientRepo(object):
             remote.send('quit')
             assert remote.recv()[0] == 'bye'
 
-def client_sync(root_path, use_cache=False):
-    ClientRepo(root_path).sync_with_remote(use_cache)
-
 def pipe_to_remote(remote_spec):
     hostname, remote_path = remote_spec.split(':')
     child_args = ['ssh', hostname, 'mf-server', remote_path]
@@ -134,4 +138,4 @@ def main():
 
     args = parse_args()
     root_path = os.getcwd()
-    client_sync(root_path, use_cache=args.use_cache)
+    ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache)
