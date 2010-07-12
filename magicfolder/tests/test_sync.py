@@ -171,21 +171,22 @@ class MockRemote(Remote):
     def expect(self, *expected):
         received = self.script_recv()
         assert (received == expected), (
-                "Bad message from client: %r, expected %r."
+                "Bad message from remote: %r, expected %r."
                 % (received, expected))
 
     def recv(self):
         try:
             msg, payload = next(self.chatter_script)
         except StopIteration:
-            assert False, ("Chatter script done, but client expected more."
+            assert False, ("Chatter script done, but remote expected more."
                            "Queue is now: %r" % list(self.queue))
         else:
             return msg, payload
 
     def done(self):
-        assert len(self.queue) == 0
-        assert len(list(self.chatter_script)) == 0
+        unread_chatter = list(self.chatter_script)
+        assert len(unread_chatter) == 0, "Unread chatter: %r" % unread_chatter
+        assert len(self.queue) == 0, "Queue not empty: %r" % list(self.queue)
 
 class ClientChatterTest(unittest.TestCase):
     def setUp(self):
@@ -345,6 +346,45 @@ class ClientChatterTest(unittest.TestCase):
         self.chat_client(test_chat)
         self.assertEqual(set(os.listdir(self.tmp_path)),
                          set(['.mf', 'file_two']))
+
+class ServerChatterTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp_path = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_path)
+
+    def init_server(self, version_trees):
+        os.mkdir(self.tmp_path + '/versions')
+        os.mkdir(self.tmp_path + '/objects')
+        objects = Backup(self.tmp_path + '/objects')
+
+        for v, file_tree in version_trees.iteritems():
+            with open(self.tmp_path + '/versions/%d' % v, 'wb') as ver_f:
+                for file_path, file_data in file_tree.iteritems():
+                    ver_f.write("%s: {sha1: %s, size: %d}\n" %
+                            (file_path, sha1hex(file_data), len(file_data)))
+                    with objects.store_data(sha1hex(file_data)) as data_f:
+                        data_f.write(file_data)
+
+    def chat_server(self, test_chat):
+        mock_remote = MockRemote(test_chat)
+        server_sync(self.tmp_path, mock_remote)
+        mock_remote.done()
+
+    def test_blank(self):
+        def test_chat(server):
+            yield 'merge', 0
+            server.expect('waiting_for_files', None)
+
+            yield 'done', None
+            server.expect('sync_complete', 0)
+
+            yield 'quit', None
+            server.expect('bye', None)
+
+        self.init_server({0: {}})
+        self.chat_server(test_chat)
 
 
 if __name__ == '__main__':
