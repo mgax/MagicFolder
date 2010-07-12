@@ -7,9 +7,11 @@ import threading
 from Queue import Queue
 from hashlib import sha1
 from contextlib import contextmanager
+from collections import deque
 
 from probity.backup import Backup
 
+from magicfolder.picklemsg import Remote
 from magicfolder.client import ClientRepo
 from magicfolder.server import server_sync, try_except_send_remote
 from magicfolder.picklemsg import Remote
@@ -58,7 +60,7 @@ def do_client_server(client_root, server_root):
     do_client_sync(client_root, s2c, c2s)
     server_thread.join()
 
-class SyncTest(unittest.TestCase):
+class FullSyncTest(unittest.TestCase):
     def setUp(self):
         self.client_tmp_path = tempfile.mkdtemp()
         self.client_root = path.join(self.client_tmp_path, 'repo')
@@ -152,6 +154,58 @@ class SyncTest(unittest.TestCase):
             self.assertEqual(f.read(), "hello world")
         with open(path.join(self.client_root, 'path_three'), 'rb') as f:
             self.assertEqual(f.read(), "me three")
+
+class MockRemote(Remote):
+    def __init__(self, chatter_script):
+        self.queue = deque()
+        self.chatter_script = chatter_script(self.script_recv)
+
+    def send(self, msg, payload=None):
+        self.queue.append( (msg, payload) )
+
+    def script_recv(self):
+        assert len(self.queue) > 0
+        msg, payload = self.queue.popleft()
+        return msg, payload
+
+    def recv(self):
+        try:
+            msg, payload = next(self.chatter_script)
+        except StopIteration:
+            assert False, ("Chatter script done, but client expected more."
+                           "Queue is now: %r" % list(self.queue))
+        else:
+            return msg, payload
+
+    def done(self):
+        assert len(self.queue) == 0
+        assert len(list(self.chatter_script)) == 0
+
+class ClientChatterTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp_path = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_path)
+
+    def init_client(self):
+        os.mkdir(self.tmp_path + '/.mf')
+        with open(self.tmp_path + '/.mf/last_sync', 'wb') as f:
+            f.write("0\n")
+
+    def test_empty_sync(self):
+        self.init_client()
+        def expected_chat(receive):
+            assert receive() == ('merge', 0)
+            yield 'waiting_for_files', None
+            assert receive() == ('done', None)
+            yield 'sync_complete', 0
+            assert receive() == ('quit', None)
+            yield 'bye', None
+
+        mock_remote = MockRemote(expected_chat)
+        TestClientRepo(self.tmp_path, mock_remote).sync_with_remote()
+        mock_remote.done()
 
 
 if __name__ == '__main__':
