@@ -283,6 +283,42 @@ class ClientChatterTest(unittest.TestCase):
         })
         self.chat_client(test_chat)
 
+    def test_download_files(self):
+        def test_chat(client):
+            client.expect('merge', 0)
+            yield 'waiting_for_files', None
+            client.expect('done', None)
+
+            yield 'file_begin', {'path': 'file_one', 'size': 9,
+                'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'}
+            yield 'file_chunk', 'some data'
+            yield 'file_end', None
+
+            yield 'file_begin', {'path': 'file_two', 'size': 1228800,
+                'checksum': '311d6913794296d8bc3557fa8745d938bf9c7b87'}
+            for c in range(18):
+                yield 'file_chunk', '0123456789abcdef' * 4096
+            yield 'file_chunk', '0123456789abcdef' * 3072
+            yield 'file_end', None
+
+            yield 'sync_complete', 1
+            client.expect('quit', None)
+            yield 'bye', None
+
+        self.init_client(0, {})
+        self.chat_client(test_chat)
+        self.assertEqual(set(os.listdir(self.tmp_path)),
+                         set(['.mf', 'file_one', 'file_two']))
+
+        with open(path.join(self.tmp_path, 'file_one'), 'rb') as f:
+            file_one_data = f.read()
+        self.assertEqual(file_one_data, 'some data')
+
+        with open(path.join(self.tmp_path, 'file_two'), 'rb') as f:
+            for c in range(12):
+                self.assertEqual(f.read(102400), '0123456789abcdef' * 6400)
+            self.assertEqual(f.read(), '')
+
 
 if __name__ == '__main__':
     unittest.main()
