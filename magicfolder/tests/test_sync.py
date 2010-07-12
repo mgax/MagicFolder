@@ -319,6 +319,33 @@ class ClientChatterTest(unittest.TestCase):
                 self.assertEqual(f.read(102400), '0123456789abcdef' * 6400)
             self.assertEqual(f.read(), '')
 
+    def test_remove_files(self):
+        def test_chat(client):
+            client.expect('merge', 0)
+            yield 'waiting_for_files', None
+
+            client.expect('file_meta', {'path': 'file_one', 'size': 9,
+                'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'})
+            yield 'continue', None
+            client.expect('file_meta', {'path': 'file_two', 'size': 14,
+                'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'})
+            yield 'continue', None
+
+            client.expect('done', None)
+            yield 'file_remove', 'file_one'
+            yield 'sync_complete', 1
+
+            client.expect('quit', None)
+            yield 'bye', None
+
+        self.init_client(0, {
+            'file_one': 'some data',
+            'file_two': 'some more data'
+        })
+        self.chat_client(test_chat)
+        self.assertEqual(set(os.listdir(self.tmp_path)),
+                         set(['.mf', 'file_two']))
+
 
 if __name__ == '__main__':
     unittest.main()
