@@ -6,10 +6,11 @@ from os import path
 import threading
 from Queue import Queue
 from hashlib import sha1
+from contextlib import contextmanager
 
 from probity.backup import Backup
 
-from magicfolder.client import client_sync
+from magicfolder.client import ClientRepo
 from magicfolder.server import server_sync, try_except_send_remote
 from magicfolder.picklemsg import Remote
 
@@ -30,6 +31,15 @@ class TestRemote(Remote):
             print "error from remote endpoint\n%s" % payload
         return msg, payload
 
+class TestClientRepo(ClientRepo):
+    def __init__(self, root_path, remote):
+        super(TestClientRepo, self).__init__(root_path)
+        self._test_remote = remote
+
+    @contextmanager
+    def connect_to_remote(self):
+        yield self._test_remote
+
 def do_server_loop(root_path, in_queue, out_queue):
     remote = TestRemote(in_queue, out_queue)
     with try_except_send_remote(remote):
@@ -37,7 +47,7 @@ def do_server_loop(root_path, in_queue, out_queue):
 
 def do_client_sync(root_path, in_queue, out_queue):
     remote = TestRemote(in_queue, out_queue)
-    client_sync(root_path, remote)
+    TestClientRepo(root_path, remote).sync_with_remote()
 
 def do_client_server(client_root, server_root):
     c2s = Queue()
@@ -52,6 +62,11 @@ class SyncTest(unittest.TestCase):
     def setUp(self):
         self.client_tmp_path = tempfile.mkdtemp()
         self.client_root = path.join(self.client_tmp_path, 'repo')
+        os.mkdir(self.client_root)
+        os.mkdir(self.client_root + '/.mf')
+        with open(self.client_root + '/.mf/last_sync', 'wb') as f:
+            f.write("0\n")
+
         self.server_root = tempfile.mkdtemp()
         self.server_objects_path = path.join(self.server_root, 'objects')
         self.server_versions_path = path.join(self.server_root, 'versions')
