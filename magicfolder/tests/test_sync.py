@@ -250,7 +250,7 @@ class ClientChatterTest(unittest.TestCase):
         })
         self.chat_client(test_chat)
 
-    def test_upload_file(self):
+    def test_upload_files(self):
         def test_chat(client):
             client.expect('merge', 0)
             yield 'waiting_for_files', None
@@ -262,6 +262,15 @@ class ClientChatterTest(unittest.TestCase):
             client.expect('file_chunk', 'some data')
             client.expect('file_end', None)
 
+            client.expect('file_meta', {'path': 'file_two', 'size': 1228800,
+                'checksum': '311d6913794296d8bc3557fa8745d938bf9c7b87'})
+            yield 'data', None
+
+            for c in range(18):
+                client.expect('file_chunk', '0123456789abcdef' * 4096)
+            client.expect('file_chunk', '0123456789abcdef' * 3072)
+            client.expect('file_end', None)
+
             client.expect('done', None)
             yield 'sync_complete', 1
 
@@ -270,6 +279,7 @@ class ClientChatterTest(unittest.TestCase):
 
         self.init_client(0, {
             'file_one': 'some data',
+            'file_two': '0123456789abcdef' * 64 * 1200 # 1.2 MB of data
         })
         self.chat_client(test_chat)
 
