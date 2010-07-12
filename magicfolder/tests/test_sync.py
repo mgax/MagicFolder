@@ -386,6 +386,90 @@ class ServerChatterTest(unittest.TestCase):
         self.init_server({0: {}})
         self.chat_server(test_chat)
 
+    def test_upload_files(self):
+        def test_chat(server):
+            yield 'merge', 1
+            server.expect('waiting_for_files', None)
+
+            yield 'file_meta', {'path': 'file_one', 'size': 9,
+                'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'}
+            server.expect('continue', None)
+
+            yield 'file_meta', {'path': 'file_two', 'size': 14,
+                'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'}
+            server.expect('data', None)
+
+            yield 'file_chunk', 'some more data'
+            yield 'file_end', None
+
+            yield 'done', None
+            server.expect('sync_complete', 2)
+
+            yield 'quit', None
+            server.expect('bye', None)
+
+        self.init_server({
+            0: {},
+            1: {'file_one': 'some data'},
+        })
+        self.chat_server(test_chat)
+        self.assertEqual(set(os.listdir(self.tmp_path + '/objects')),
+                         set(['83', 'ba']))
+
+    def test_download_files(self):
+        def test_chat(server):
+            yield 'merge', 1
+            server.expect('waiting_for_files', None)
+
+            yield 'file_meta', {'path': 'file_one', 'size': 9,
+                'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'}
+            server.expect('continue', None)
+
+            yield 'done', None
+
+            server.expect('file_begin', {'path': 'file_two', 'size': 14,
+                'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'})
+            server.expect('file_chunk', 'some more data')
+            server.expect('file_end', None)
+            server.expect('sync_complete', 2)
+
+            yield 'quit', None
+            server.expect('bye', None)
+
+        self.init_server({
+            0: {},
+            1: {'file_one': 'some data'},
+            2: {'file_one': 'some data', 'file_two': 'some more data'},
+        })
+        self.chat_server(test_chat)
+
+    def test_remove_files(self):
+        def test_chat(server):
+            yield 'merge', 1
+            server.expect('waiting_for_files', None)
+
+            yield 'file_meta', {'path': 'file_one', 'size': 9,
+                'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'}
+            server.expect('continue', None)
+
+            yield 'file_meta', {'path': 'file_two', 'size': 14,
+                'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'}
+            server.expect('continue', None)
+
+            yield 'done', None
+            server.expect('file_remove', 'file_two')
+            server.expect('sync_complete', 2)
+
+            yield 'quit', None
+            server.expect('bye', None)
+
+        self.init_server({
+            0: {},
+            1: {'file_one': 'some data', 'file_two': 'some more data'},
+            2: {'file_one': 'some data'},
+        })
+        self.chat_server(test_chat)
+
 
 if __name__ == '__main__':
     unittest.main()
