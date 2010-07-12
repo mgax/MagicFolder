@@ -158,7 +158,7 @@ class FullSyncTest(unittest.TestCase):
 class MockRemote(Remote):
     def __init__(self, chatter_script):
         self.queue = deque()
-        self.chatter_script = chatter_script(self.script_recv)
+        self.chatter_script = chatter_script(self)
 
     def send(self, msg, payload=None):
         self.queue.append( (msg, payload) )
@@ -167,6 +167,12 @@ class MockRemote(Remote):
         assert len(self.queue) > 0
         msg, payload = self.queue.popleft()
         return msg, payload
+
+    def expect(self, *expected):
+        received = self.script_recv()
+        assert (received == expected), (
+                "Bad message from client: %r, expected %r."
+                % (received, expected))
 
     def recv(self):
         try:
@@ -188,24 +194,61 @@ class ClientChatterTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp_path)
 
-    def init_client(self):
+    def init_client(self, last_sync, repo_files):
         os.mkdir(self.tmp_path + '/.mf')
         with open(self.tmp_path + '/.mf/last_sync', 'wb') as f:
-            f.write("0\n")
+            f.write("%d\n" % last_sync)
+        for file_path, file_data in repo_files.iteritems():
+            file_full_path = path.join(self.tmp_path, file_path)
+            folder_path = path.dirname(file_full_path)
+            if not path.isdir(folder_path):
+                os.makedirs(folder_path)
+            with open(file_full_path, 'wb') as f:
+                f.write(file_data)
 
-    def test_empty_sync(self):
-        self.init_client()
-        def expected_chat(receive):
-            assert receive() == ('merge', 0)
-            yield 'waiting_for_files', None
-            assert receive() == ('done', None)
-            yield 'sync_complete', 0
-            assert receive() == ('quit', None)
-            yield 'bye', None
-
-        mock_remote = MockRemote(expected_chat)
+    def chat_client(self, test_chat):
+        mock_remote = MockRemote(test_chat)
         TestClientRepo(self.tmp_path, mock_remote).sync_with_remote()
         mock_remote.done()
+
+    def test_empty_sync(self):
+        def test_chat(client):
+            client.expect('merge', 0)
+            yield 'waiting_for_files', None
+
+            client.expect('done', None)
+            yield 'sync_complete', 0
+
+            client.expect('quit', None)
+            yield 'bye', None
+
+        self.init_client(0, {})
+        self.chat_client(test_chat)
+
+    def test_enumerate_files(self):
+        def test_chat(client):
+            client.expect('merge', 0)
+            yield 'waiting_for_files', None
+
+            client.expect('file_meta', {'path': 'file_one', 'size': 9,
+                'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'})
+            yield 'continue', None
+
+            client.expect('file_meta', {'path': 'file_two', 'size': 14,
+                'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'})
+            yield 'continue', None
+
+            client.expect('done', None)
+            yield 'sync_complete', 1
+
+            client.expect('quit', None)
+            yield 'bye', None
+
+        self.init_client(0, {
+            'file_one': 'some data',
+            'file_two': 'some more data',
+        })
+        self.chat_client(test_chat)
 
 
 if __name__ == '__main__':
