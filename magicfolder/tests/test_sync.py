@@ -250,6 +250,29 @@ class ClientChatterTest(unittest.TestCase):
         })
         self.chat_client(test_chat)
 
+    def test_upload_file(self):
+        def test_chat(client):
+            client.expect('merge', 0)
+            yield 'waiting_for_files', None
+
+            client.expect('file_meta', {'path': 'file_one', 'size': 9,
+                'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'})
+            yield 'data', None
+
+            client.expect('file_chunk', 'some data')
+            client.expect('file_end', None)
+
+            client.expect('done', None)
+            yield 'sync_complete', 1
+
+            client.expect('quit', None)
+            yield 'bye', None
+
+        self.init_client(0, {
+            'file_one': 'some data',
+        })
+        self.chat_client(test_chat)
+
 
 if __name__ == '__main__':
     unittest.main()
