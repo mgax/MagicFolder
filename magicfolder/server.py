@@ -18,6 +18,9 @@ def dump_fileitems(fh, bag):
         for i in sorted(bag, key=operator.attrgetter('path')):
             write_file_item(i)
 
+def file_item_tree(file_item_iter):
+    return dict( (i.path, i) for i in file_item_iter )
+
 def server_init(root_path):
     os.mkdir(path.join(root_path, 'objects'))
     os.mkdir(path.join(root_path, 'versions'))
@@ -116,6 +119,83 @@ def server_sync(root_path, remote):
     msg, payload = remote.recv()
     assert msg == 'quit'
     remote.send('bye')
+
+def calculate_merge(old_bag, client_bag, server_bag):
+    client_tree = file_item_tree(client_bag)
+    old_tree = file_item_tree(old_bag)
+    server_tree = file_item_tree(server_bag)
+
+    client_paths = set(client_tree)
+    old_paths = set(old_tree)
+    server_paths = set(server_tree)
+
+    # just in case one of the inputs has duplicate paths
+    assert len(client_paths) == len(client_bag)
+    assert len(old_paths) == len(old_bag)
+    assert len(server_paths) == len(server_bag)
+
+    new_tree = {}
+    conflict = set()
+
+    for p in client_paths - server_paths - old_paths:
+        # new files on the client
+        new_tree[p] = client_tree[p]
+
+    for p in server_paths - client_paths - old_paths:
+        # new files on the server
+        new_tree[p] = server_tree[p]
+
+    for p in client_paths & server_paths - old_paths:
+        # new files on both (conflict)
+        new_tree[p] = client_tree[p]
+        conflict.add(server_tree[p])
+
+    for p in old_paths:
+        old_item = old_tree.get(p)
+        client_item = client_tree.get(p, None)
+        server_item = server_tree.get(p, None)
+
+        if client_item == old_item:
+            if server_item == old_item:
+                # no change
+                new_tree[p] = old_item
+
+            elif server_item is None:
+                # removed on server
+                pass
+
+            else:
+                # changed on server
+                new_tree[p] = server_item
+
+        elif client_item is None:
+            if server_item == old_item:
+                # removed on client
+                pass
+
+            elif server_item is None:
+                # removed on both
+                pass
+
+            else:
+                # removed on client but changed on server
+                new_tree[p] = server_item
+
+        else:
+            if server_item == old_item:
+                # changed on client
+                new_tree[p] = client_item
+
+            elif server_item is None:
+                # don't delete, use client version
+                new_tree[p] = client_item
+
+            else:
+                # changed on both; conflict
+                new_tree[p] = client_item
+                conflict.add(server_item)
+
+    return new_tree, conflict
 
 
 @contextmanager
