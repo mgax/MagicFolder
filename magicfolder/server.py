@@ -45,7 +45,7 @@ def server_sync(root_path, remote):
         return open(path.join(root_path, 'versions/%d' % n), mode)
 
     msg, payload = remote.recv()
-    assert msg == 'merge'
+    assert msg == 'sync'
 
     versions_path = path.join(root_path, 'versions')
     latest_version = max(int(v) for v in os.listdir(versions_path))

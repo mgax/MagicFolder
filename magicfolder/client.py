@@ -105,7 +105,7 @@ class ClientRepo(object):
 
     def sync_with_remote(self, use_cache=False):
         with self.connect_to_remote() as remote:
-            remote.send('merge', self.last_sync)
+            remote.send('sync', self.last_sync)
             msg, payload = remote.recv()
             assert msg == 'waiting_for_files'
 

@@ -214,7 +214,7 @@ class ClientChatterTest(unittest.TestCase):
 
     def test_empty_sync(self):
         def test_chat(client):
-            client.expect('merge', 0)
+            client.expect('sync', 0)
             yield 'waiting_for_files', None
 
             client.expect('done', None)
@@ -228,7 +228,7 @@ class ClientChatterTest(unittest.TestCase):
 
     def test_enumerate_files(self):
         def test_chat(client):
-            client.expect('merge', 0)
+            client.expect('sync', 0)
             yield 'waiting_for_files', None
 
             client.expect('file_meta', {'path': 'file_one', 'size': 9,
@@ -253,7 +253,7 @@ class ClientChatterTest(unittest.TestCase):
 
     def test_upload_files(self):
         def test_chat(client):
-            client.expect('merge', 0)
+            client.expect('sync', 0)
             yield 'waiting_for_files', None
 
             client.expect('file_meta', {'path': 'file_one', 'size': 9,
@@ -286,7 +286,7 @@ class ClientChatterTest(unittest.TestCase):
 
     def test_download_files(self):
         def test_chat(client):
-            client.expect('merge', 0)
+            client.expect('sync', 0)
             yield 'waiting_for_files', None
             client.expect('done', None)
 
@@ -322,7 +322,7 @@ class ClientChatterTest(unittest.TestCase):
 
     def test_remove_files(self):
         def test_chat(client):
-            client.expect('merge', 0)
+            client.expect('sync', 0)
             yield 'waiting_for_files', None
 
             client.expect('file_meta', {'path': 'file_one', 'size': 9,
@@ -374,7 +374,7 @@ class ServerChatterTest(unittest.TestCase):
 
     def test_blank(self):
         def test_chat(server):
-            yield 'merge', 0
+            yield 'sync', 0
             server.expect('waiting_for_files', None)
 
             yield 'done', None
@@ -388,7 +388,7 @@ class ServerChatterTest(unittest.TestCase):
 
     def test_upload_files(self):
         def test_chat(server):
-            yield 'merge', 1
+            yield 'sync', 1
             server.expect('waiting_for_files', None)
 
             yield 'file_meta', {'path': 'file_one', 'size': 9,
@@ -418,7 +418,7 @@ class ServerChatterTest(unittest.TestCase):
 
     def test_download_files(self):
         def test_chat(server):
-            yield 'merge', 1
+            yield 'sync', 1
             server.expect('waiting_for_files', None)
 
             yield 'file_meta', {'path': 'file_one', 'size': 9,
@@ -445,7 +445,7 @@ class ServerChatterTest(unittest.TestCase):
 
     def test_remove_files(self):
         def test_chat(server):
-            yield 'merge', 1
+            yield 'sync', 1
             server.expect('waiting_for_files', None)
 
             yield 'file_meta', {'path': 'file_one', 'size': 9,
