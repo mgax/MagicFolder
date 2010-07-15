@@ -121,6 +121,36 @@ def server_sync(root_path, remote):
     remote.send('bye')
 
 def calculate_merge(old_bag, client_bag, server_bag):
+    """
+    "old" is the most recent common ancestor of "client" and "server".
+    We need to decide what is safe to keep and remove from each, and
+    create a separate list of files with confilcts (they require renaming).
+    Here is the logic.
+
+    If a path IS NOT in "old":
+
+                |          server:          |
+                | no action   |   created   |
+      client: --+-------------+-------------+
+      no action | impossible  | keep server |
+     -----------+-------------+-------------+
+        created | keep client | keep both * |
+     -----------+-------------+-------------+
+
+    If a path IS in "old":
+
+                |                 server:                 |
+                | no action   |   removed   |   changed   |
+      client: --+-------------+-------------+-------------+
+      no action |  keep any   |   remove    | keep server |
+     -----------+-------------+-------------+-------------+
+        removed |   remove    |   remove    | keep server |
+     -----------+-------------+-------------+-------------+
+        changed | keep client | keep client | keep both * |
+
+    "keep both" means conflict, and one of the files must be renamed.
+
+    """
     client_tree = file_item_tree(client_bag)
     old_tree = file_item_tree(old_bag)
     server_tree = file_item_tree(server_bag)
