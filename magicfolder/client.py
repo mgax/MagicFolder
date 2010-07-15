@@ -123,6 +123,14 @@ def parse_args():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='subcmd')
 
+    init_parser = subparsers.add_parser('init',
+        help="initialize repository")
+    init_parser.add_argument("remote", nargs='*',
+        help="remote server url")
+    init_parser.add_argument("-s", "--server",
+        action="store_true", dest="server", default=False,
+        help="initialize a server repository")
+
     sync_parser = subparsers.add_parser('sync',
         help="synchronize with server")
     sync_parser.add_argument("-t", "--trust",
@@ -130,7 +138,6 @@ def parse_args():
         help="only check timestamp and size")
 
     args = parser.parse_args()
-    assert args.subcmd == 'sync'
     return args
 
 def main():
@@ -138,4 +145,15 @@ def main():
 
     args = parse_args()
     root_path = os.getcwd()
-    ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache)
+
+    if args.subcmd == 'init':
+        if args.server:
+            from server import server_init
+            server_init(root_path)
+        else:
+            assert len(args.remote) == 1
+            client_init(root_path, args.remote[0])
+    elif args.subcmd == 'sync':
+        ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache)
+    else:
+        raise ValueError('bad param')
