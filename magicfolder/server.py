@@ -4,6 +4,7 @@ from os import path
 import traceback
 from StringIO import StringIO
 import operator
+import logging
 from contextlib import contextmanager
 
 from probity import probfile
@@ -12,6 +13,8 @@ from probity.events import FileEvent
 
 import picklemsg
 from checksum import FileItem
+
+log = logging.getLogger('magicfolder.server')
 
 def event_to_fileitem(event):
     return FileItem(event.path, event.checksum, event.size, 0)
@@ -48,6 +51,9 @@ def server_sync(root_path, remote):
     latest_version = max(int(v) for v in os.listdir(versions_path))
     remote_base_version = payload
 
+    log.debug("Begin sync at version %d, remote last_sync is %d",
+              latest_version, remote_base_version)
+
     current_server_bag = set()
     with open_version_index(latest_version, 'rb') as f:
         for event in probfile.parse_file(f):
@@ -76,18 +82,21 @@ def server_sync(root_path, remote):
 
         assert msg == 'file_meta'
 
-        checksum = payload['checksum']
-        client_bag.add(FileItem(payload['path'], checksum, payload['size'], 0))
+        client_bag.add(FileItem(payload['path'], payload['checksum'],
+                                payload['size'], 0))
 
-        if checksum in data_pool:
+        if payload['checksum'] in data_pool:
             remote.send('continue')
             continue
 
+        log.debug("Downloading data for %s (size: %r, path: %r)",
+                  payload['checksum'], payload['size'], payload['path'])
         remote.send('data')
-        with data_pool.store_data(checksum) as local_file:
+        with data_pool.store_data(payload['checksum']) as local_file:
             remote.recv_file(local_file)
 
     if remote_outdated:
+        log.debug("Client was at old version, performing merge")
         assert old_server_bag == client_bag
         current_version = latest_version
 
@@ -98,21 +107,31 @@ def server_sync(root_path, remote):
                 'checksum': event.checksum,
                 'size': event.size,
             }
+            log.debug("Sending file %s for path %r",
+                      new_file.checksum, new_file.path)
             remote.send('file_begin', file_meta)
             with open(object_path(root_path, event.checksum), 'rb') as f:
                 remote.send_file(f)
 
         for removed_file in client_bag - current_server_bag:
+            log.debug("Asking client to remove %s (size: %r, path: %r)",
+                      removed_file.checksum, removed_file.size,
+                      removed_file.path)
             remote.send('file_remove', removed_file.path)
 
     else:
         if current_server_bag == client_bag:
             current_version = latest_version
+            log.debug("Client has no changes, staying at version %d",
+                      current_version)
         else:
             current_version = latest_version + 1
+            log.debug("Client has changes, creating new version %d",
+                      current_version)
             with open_version_index(current_version, 'wb') as f:
                 dump_fileitems(f, client_bag)
 
+    log.debug("Sync complete")
     remote.send('sync_complete', current_version)
 
     msg, payload = remote.recv()
@@ -125,6 +144,7 @@ def try_except_send_remote(remote):
     try:
         yield
     except:
+        log.exception("Exception while performing sync")
         try:
             error_report = traceback.format_exc()
         except:
@@ -133,8 +153,10 @@ def try_except_send_remote(remote):
 
 def main():
     assert len(sys.argv) == 2
-
     root_path = path.join(sys.argv[1])
+
+    logging.basicConfig(level=logging.DEBUG,
+                        filename=path.join(root_path, 'debug.log'))
     remote = picklemsg.Remote(sys.stdin, sys.stdout)
 
     with try_except_send_remote(remote):

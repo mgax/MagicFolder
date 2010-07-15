@@ -35,11 +35,12 @@ class ClientRepo(object):
         with open(path.join(self.root_path, '.mf', 'remote'), 'rb') as f:
             remote_url = f.read().strip()
 
+        log.debug("Connecting to server %r", remote_url)
+
         yield pipe_to_remote(remote_url)
 
     def send_local_status(self, remote, use_cache):
-        log.debug("sync session, last_version=%d - listing local files",
-                  self.last_sync)
+        log.debug("Sync session, last_sync %r", self.last_sync)
 
         bytes_count = 0
         files_count = 0
@@ -47,8 +48,6 @@ class ClientRepo(object):
 
         for file_item in repo_file_events(self.root_path, use_cache):
             files_count += 1
-            if files_count % 100 == 0:
-                log.debug("still listing local files, %d so far", files_count)
 
             file_meta = {
                 'path': file_item.path,
@@ -63,13 +62,16 @@ class ClientRepo(object):
 
             assert msg == 'data'
             file_path = path.join(self.root_path, file_item.path)
+            log.debug("uploading file %s, path %r",
+                      file_item.checksum, file_item.path)
             with open(file_path, 'rb') as data_file:
                 remote.send_file(data_file)
                 bytes_count += data_file.tell()
 
-        log.debug("finished sending files to server (%d bytes in %d seconds)",
+        log.debug("Finished sending files to server "
+                  "(bytes: %r, time: %r seconds)",
                   bytes_count, int(time() - time0))
-        log.debug("we have %d files locally", files_count)
+        log.debug("We have %r files locally", files_count)
 
         remote.send('done')
 
@@ -80,7 +82,8 @@ class ClientRepo(object):
                 break
 
             elif msg == 'file_begin':
-                log.debug("new file %r", payload['path'])
+                log.debug("Receiving file %r %r",
+                          payload['path'], payload['checksum'])
                 file_path = path.join(self.root_path, payload['path'])
                 folder_path = path.dirname(file_path)
                 if not path.isdir(folder_path):
@@ -90,7 +93,7 @@ class ClientRepo(object):
                     remote.recv_file(local_file)
 
             elif msg == 'file_remove':
-                log.debug("removing file %r", payload)
+                log.debug("Removing file %r", payload)
                 os.unlink(path.join(self.root_path, payload))
 
             else:
@@ -98,7 +101,7 @@ class ClientRepo(object):
 
         assert payload >= self.last_sync
         self.update_last_sync(payload)
-        log.debug("sync complete, now at version %d", payload)
+        log.debug("Sync complete, now at version %d", payload)
 
     def sync_with_remote(self, use_cache=False):
         with self.connect_to_remote() as remote:
@@ -141,10 +144,11 @@ def parse_args():
     return args
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
-
     args = parse_args()
     root_path = os.getcwd()
+
+    logging.basicConfig(level=logging.DEBUG,
+                        filename=path.join(root_path, '.mf', 'debug.log'))
 
     if args.subcmd == 'init':
         if args.server:
@@ -154,6 +158,9 @@ def main():
             assert len(args.remote) == 1
             client_init(root_path, args.remote[0])
     elif args.subcmd == 'sync':
-        ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache)
+        try:
+            ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache)
+        except:
+            log.exception("Exception while performing sync")
     else:
         raise ValueError('bad param')
