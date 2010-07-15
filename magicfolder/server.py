@@ -38,7 +38,7 @@ def server_sync(root_path, remote):
     latest_version = max(int(v) for v in os.listdir(versions_path))
     remote_base_version = payload
 
-    log.debug("Begin sync at version %d, remote last_sync is %d",
+    log.debug("Begin sync at version %d, client last_sync is %d",
               latest_version, remote_base_version)
 
     with open_version_index(latest_version, 'rb') as f:
@@ -81,6 +81,10 @@ def server_sync(root_path, remote):
 
     if remote_outdated:
         log.debug("Client was at old version, performing merge")
+        for file_item in old_server_bag - client_bag:
+            log.debug("Removed by client: %r", file_item)
+        for file_item in client_bag - old_server_bag:
+            log.debug("Added by client: %r", file_item)
         assert old_server_bag == client_bag
         current_version = latest_version
 
