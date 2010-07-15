@@ -7,29 +7,16 @@ import operator
 import logging
 from contextlib import contextmanager
 
-from probity import probfile
-from probity.backup import Backup
-from probity.events import FileEvent
-
 import picklemsg
-from checksum import FileItem
+from blobdb import BlobDB
+from checksum import FileItem, read_version_file, write_version_file
 
 log = logging.getLogger('magicfolder.server')
 
-def event_to_fileitem(event):
-    return FileItem(event.path, event.checksum, event.size, 0)
-
-def fileitem_to_event(fileitem):
-    return FileEvent('_', fileitem.path, fileitem.checksum, fileitem.size)
-
-def dump_fileitems(file_ob, fileitem_bag):
-    with probfile.YamlDumper(file_ob) as yaml_dumper:
-        for fileitem in sorted(fileitem_bag, key=operator.attrgetter('path')):
-            yaml_dumper.write(fileitem_to_event(fileitem))
-
-def object_path(root_path, checksum):
-    h1, h2 = checksum[:2], checksum[2:]
-    return path.join(root_path, 'objects', h1, h2)
+def dump_fileitems(fh, bag):
+    with write_version_file(fh) as write_file_item:
+        for i in sorted(bag, key=operator.attrgetter('path')):
+            write_file_item(i)
 
 def server_init(root_path):
     os.mkdir(path.join(root_path, 'objects'))
@@ -39,7 +26,7 @@ def server_init(root_path):
 
 def server_sync(root_path, remote):
     assert path.isdir(root_path)
-    data_pool = Backup(path.join(root_path, 'objects'))
+    data_pool = BlobDB(path.join(root_path, 'objects'))
 
     def open_version_index(n, mode):
         return open(path.join(root_path, 'versions/%d' % n), mode)
@@ -54,10 +41,8 @@ def server_sync(root_path, remote):
     log.debug("Begin sync at version %d, remote last_sync is %d",
               latest_version, remote_base_version)
 
-    current_server_bag = set()
     with open_version_index(latest_version, 'rb') as f:
-        for event in probfile.parse_file(f):
-            current_server_bag.add(event_to_fileitem(event))
+        current_server_bag = set(read_version_file(f))
 
     if remote_base_version == latest_version:
         remote_outdated = False
@@ -67,8 +52,7 @@ def server_sync(root_path, remote):
         old_server_bag = set()
         if remote_base_version != 0:
             with open_version_index(remote_base_version, 'rb') as f:
-                for event in probfile.parse_file(f):
-                    old_server_bag.add(event_to_fileitem(event))
+                old_server_bag.update(read_version_file(f))
 
     remote.send('waiting_for_files')
 
@@ -83,7 +67,7 @@ def server_sync(root_path, remote):
         assert msg == 'file_meta'
 
         client_bag.add(FileItem(payload['path'], payload['checksum'],
-                                payload['size'], 0))
+                                payload['size'], None))
 
         if payload['checksum'] in data_pool:
             remote.send('continue')
@@ -92,7 +76,7 @@ def server_sync(root_path, remote):
         log.debug("Downloading data for %s (size: %r, path: %r)",
                   payload['checksum'], payload['size'], payload['path'])
         remote.send('data')
-        with data_pool.store_data(payload['checksum']) as local_file:
+        with data_pool.write_file(payload['checksum']) as local_file:
             remote.recv_file(local_file)
 
     if remote_outdated:
@@ -101,16 +85,15 @@ def server_sync(root_path, remote):
         current_version = latest_version
 
         for new_file in current_server_bag - client_bag:
-            event = fileitem_to_event(new_file)
             file_meta = {
-                'path': event.path,
-                'checksum': event.checksum,
-                'size': event.size,
+                'path': new_file.path,
+                'checksum': new_file.checksum,
+                'size': new_file.size,
             }
             log.debug("Sending file %s for path %r",
                       new_file.checksum, new_file.path)
             remote.send('file_begin', file_meta)
-            with open(object_path(root_path, event.checksum), 'rb') as f:
+            with data_pool.read_file(new_file.checksum) as f:
                 remote.send_file(f)
 
         for removed_file in client_bag - current_server_bag:

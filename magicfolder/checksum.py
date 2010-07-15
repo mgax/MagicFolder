@@ -3,6 +3,10 @@ from os import path
 from collections import namedtuple
 from hashlib import sha1
 import cPickle as pickle
+from itertools import imap
+from contextlib import contextmanager
+import re
+import json
 
 FileItem = namedtuple('FileItem', 'path checksum size time')
 
@@ -62,3 +66,30 @@ def repo_file_events(root_path, use_cache=False):
 
     with open(cache_path, 'wb') as f:
         pickle.dump(new_cache, f, protocol=2)
+
+file_item_pattern = re.compile(r'^(?P<checksum>"[0-9a-f]{40}")\s*'
+                               r'(?P<size>\d+)\s*'
+                               r'(?P<path>".*")\s*$')
+
+def string_to_file_item(s):
+    m = file_item_pattern.match(s)
+    assert m is not None, "malformed file entry: %r" % s
+    return FileItem(json.loads(m.group('path')),
+                    json.loads(m.group('checksum')),
+                    int(m.group('size')),
+                    None)
+
+def file_item_to_string(file_item):
+    return "%s %10d %s" % (json.dumps(file_item.checksum),
+                           file_item.size,
+                           json.dumps(file_item.path))
+
+def read_version_file(fh):
+    return imap(string_to_file_item, fh)
+
+@contextmanager
+def write_version_file(fh):
+    def write_file_item(file_item):
+        fh.write(file_item_to_string(file_item) + '\n')
+
+    yield write_file_item

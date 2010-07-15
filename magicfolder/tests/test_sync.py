@@ -9,12 +9,10 @@ from hashlib import sha1
 from contextlib import contextmanager
 from collections import deque
 
-from probity.backup import Backup
-
 from magicfolder.picklemsg import Remote
+from magicfolder.blobdb import BlobDB
 from magicfolder.client import ClientRepo
 from magicfolder.server import server_sync, try_except_send_remote
-from magicfolder.picklemsg import Remote
 
 def sha1hex(s):
     return sha1(s).hexdigest()
@@ -83,13 +81,13 @@ class FullSyncTest(unittest.TestCase):
         shutil.rmtree(self.server_root)
 
     def server_fixtures(self, version, files):
-        server_objs = Backup(self.server_objects_path)
+        server_objs = BlobDB(self.server_objects_path)
         index_path = path.join(self.server_versions_path, str(version))
         with open(index_path, 'wb') as index_f:
             for file_path, file_data in files.iteritems():
-                index_f.write('%s: {sha1: %s, size: %d}\n' %
-                              (file_path, sha1hex(file_data), len(file_data)))
-                with server_objs.store_data(sha1hex(file_data)) as data_f:
+                index_f.write('"%s" %10d "%s"\n' %
+                              (sha1hex(file_data), len(file_data), file_path))
+                with server_objs.write_file(sha1hex(file_data)) as data_f:
                     data_f.write(file_data)
 
     def test_initial(self):
@@ -126,9 +124,9 @@ class FullSyncTest(unittest.TestCase):
                          set(['1', '2']))
         with open(path.join(self.server_versions_path, '2'), 'rb') as f:
             version_2_index = f.read()
-        new_file_line = ("path_three: {sha1: %s, size: %d}\n" %
-                         (sha1hex(data_three), len(data_three)))
-        removed_file_line = ("path_one: {sha1: %s, size: %d}\n" %
+        new_file_line = ('"%s" %10d "path_three"\n' %
+                             (sha1hex(data_three), len(data_three)))
+        removed_file_line = ('"%s" %10d "path_one"\n' %
                              (sha1hex(data_one), len(data_one)))
         self.assertTrue(new_file_line in version_2_index)
         self.assertTrue(removed_file_line not in version_2_index)
@@ -357,14 +355,14 @@ class ServerChatterTest(unittest.TestCase):
     def init_server(self, version_trees):
         os.mkdir(self.tmp_path + '/versions')
         os.mkdir(self.tmp_path + '/objects')
-        objects = Backup(self.tmp_path + '/objects')
+        objects = BlobDB(self.tmp_path + '/objects')
 
         for v, file_tree in version_trees.iteritems():
             with open(self.tmp_path + '/versions/%d' % v, 'wb') as ver_f:
                 for file_path, file_data in file_tree.iteritems():
-                    ver_f.write("%s: {sha1: %s, size: %d}\n" %
-                            (file_path, sha1hex(file_data), len(file_data)))
-                    with objects.store_data(sha1hex(file_data)) as data_f:
+                    ver_f.write('"%s" %10d "%s"\n' %
+                            (sha1hex(file_data), len(file_data), file_path))
+                    with objects.write_file(sha1hex(file_data)) as data_f:
                         data_f.write(file_data)
 
     def chat_server(self, test_chat):
