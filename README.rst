@@ -35,7 +35,9 @@ Issues and caveats
 While MagicFolder is intended to back up data by replicating on several
 hosts, and the author uses it routinely, be warned it's alpha-quality.
 In particular there is no provision for detecting changes to files
-during synchronization or recovering from errors.
+during synchronization or recovering from errors. The client-server
+chatter protocol is also in flux, so be sure to use the same version of
+MagicFolder on both client and server.
 
 There is no support yet for merging local and remote changes, and
 resolving conflicts - synchronization is simply aborted - but this

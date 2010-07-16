@@ -42,44 +42,33 @@ class ClientRepo(object):
     def send_local_status(self, remote, use_cache):
         log.debug("Sync session, last_sync %r", self.last_sync)
 
-        bytes_count = 0
-        files_count = 0
-        time0 = time()
-
+        file_item_map = {}
         for file_item in repo_file_events(self.root_path, use_cache):
-            files_count += 1
-
             file_meta = {
                 'path': file_item.path,
                 'checksum': file_item.checksum,
                 'size': file_item.size,
             }
             remote.send('file_meta', file_meta)
-            msg, payload = remote.recv()
+            file_item_map[file_item.checksum] = file_item
 
-            if msg == 'continue':
-                continue
-
-            assert msg == 'data'
-            file_path = path.join(self.root_path, file_item.path)
-            log.debug("uploading file %s, path %r",
-                      file_item.checksum, file_item.path)
-            with open(file_path, 'rb') as data_file:
-                remote.send_file(data_file)
-                bytes_count += data_file.tell()
-
-        log.debug("Finished sending files to server "
-                  "(bytes: %r, time: %r seconds)",
-                  bytes_count, int(time() - time0))
-        log.debug("We have %r files locally", files_count)
-
+        log.debug("Finished sending index to server")
         remote.send('done')
+        return file_item_map
 
-    def receive_remote_update(self, remote):
+    def receive_remote_update(self, remote, file_item_map):
         while True:
             msg, payload = remote.recv()
             if msg == 'sync_complete':
                 break
+
+            elif msg == 'data':
+                file_item = file_item_map[payload]
+                file_path = path.join(self.root_path, file_item.path)
+                log.debug("uploading file %s, path %r",
+                          file_item.checksum, file_item.path)
+                with open(file_path, 'rb') as data_file:
+                    remote.send_file(data_file)
 
             elif msg == 'file_begin':
                 log.debug("Receiving file %r %r",
@@ -109,9 +98,9 @@ class ClientRepo(object):
             msg, payload = remote.recv()
             assert msg == 'waiting_for_files'
 
-            self.send_local_status(remote, use_cache)
+            file_item_map = self.send_local_status(remote, use_cache)
 
-            self.receive_remote_update(remote)
+            self.receive_remote_update(remote, file_item_map)
 
             remote.send('quit')
             assert remote.recv()[0] == 'bye'

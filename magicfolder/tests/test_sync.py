@@ -231,11 +231,9 @@ class ClientChatterTest(unittest.TestCase):
 
             client.expect('file_meta', {'path': 'file_one', 'size': 9,
                 'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'})
-            yield 'continue', None
 
             client.expect('file_meta', {'path': 'file_two', 'size': 14,
                 'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'})
-            yield 'continue', None
 
             client.expect('done', None)
             yield 'sync_complete', 1
@@ -252,28 +250,27 @@ class ClientChatterTest(unittest.TestCase):
     def test_upload_files(self):
         def test_chat(client):
             client.expect('sync', 0)
-            yield 'waiting_for_files', None
 
+            yield 'waiting_for_files', None
             client.expect('file_meta', {'path': 'file_one', 'size': 9,
                 'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'})
-            yield 'data', None
+            client.expect('file_meta', {'path': 'file_two', 'size': 1228800,
+                'checksum': '311d6913794296d8bc3557fa8745d938bf9c7b87'})
+            client.expect('done', None)
 
+            yield 'data', 'baf34551fecb48acc3da868eb85e1b6dac9de356'
             client.expect('file_chunk', 'some data')
             client.expect('file_end', None)
 
-            client.expect('file_meta', {'path': 'file_two', 'size': 1228800,
-                'checksum': '311d6913794296d8bc3557fa8745d938bf9c7b87'})
-            yield 'data', None
-
+            yield 'data', '311d6913794296d8bc3557fa8745d938bf9c7b87'
             for c in range(18):
                 client.expect('file_chunk', '0123456789abcdef' * 4096)
             client.expect('file_chunk', '0123456789abcdef' * 3072)
             client.expect('file_end', None)
 
-            client.expect('done', None)
             yield 'sync_complete', 1
-
             client.expect('quit', None)
+
             yield 'bye', None
 
         self.init_client(0, {
@@ -325,10 +322,8 @@ class ClientChatterTest(unittest.TestCase):
 
             client.expect('file_meta', {'path': 'file_one', 'size': 9,
                 'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'})
-            yield 'continue', None
             client.expect('file_meta', {'path': 'file_two', 'size': 14,
                 'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'})
-            yield 'continue', None
 
             client.expect('done', None)
             yield 'file_remove', 'file_one'
@@ -387,23 +382,21 @@ class ServerChatterTest(unittest.TestCase):
     def test_upload_files(self):
         def test_chat(server):
             yield 'sync', 1
-            server.expect('waiting_for_files', None)
 
+            server.expect('waiting_for_files', None)
             yield 'file_meta', {'path': 'file_one', 'size': 9,
                 'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'}
-            server.expect('continue', None)
-
             yield 'file_meta', {'path': 'file_two', 'size': 14,
                 'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'}
-            server.expect('data', None)
+            yield 'done', None
 
+            server.expect('data', '83ca2344ac9901d5590bb59b7be651869ef5fbd9')
             yield 'file_chunk', 'some more data'
             yield 'file_end', None
 
-            yield 'done', None
             server.expect('sync_complete', 2)
-
             yield 'quit', None
+
             server.expect('bye', None)
 
         self.init_server({
@@ -421,7 +414,6 @@ class ServerChatterTest(unittest.TestCase):
 
             yield 'file_meta', {'path': 'file_one', 'size': 9,
                 'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'}
-            server.expect('continue', None)
 
             yield 'done', None
 
@@ -448,11 +440,9 @@ class ServerChatterTest(unittest.TestCase):
 
             yield 'file_meta', {'path': 'file_one', 'size': 9,
                 'checksum': 'baf34551fecb48acc3da868eb85e1b6dac9de356'}
-            server.expect('continue', None)
 
             yield 'file_meta', {'path': 'file_two', 'size': 14,
                 'checksum': '83ca2344ac9901d5590bb59b7be651869ef5fbd9'}
-            server.expect('continue', None)
 
             yield 'done', None
             server.expect('file_remove', 'file_two')

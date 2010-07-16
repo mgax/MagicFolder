@@ -69,15 +69,13 @@ def server_sync(root_path, remote):
         client_bag.add(FileItem(payload['path'], payload['checksum'],
                                 payload['size'], None))
 
-        if payload['checksum'] in data_pool:
-            remote.send('continue')
-            continue
-
-        log.debug("Downloading data for %s (size: %r, path: %r)",
-                  payload['checksum'], payload['size'], payload['path'])
-        remote.send('data')
-        with data_pool.write_file(payload['checksum']) as local_file:
-            remote.recv_file(local_file)
+    for i in client_bag:
+        if i.checksum not in data_pool:
+            log.debug("Downloading data for %s (size: %r, path: %r)",
+                      i.checksum, i.size, i.path)
+            remote.send('data', i.checksum)
+            with data_pool.write_file(i.checksum) as bf:
+                remote.recv_file(bf)
 
     if remote_outdated:
         log.debug("Client was at old version, performing merge")
