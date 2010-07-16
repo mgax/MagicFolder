@@ -101,6 +101,7 @@ def server_sync(root_path, remote):
                 remote.send_file(f)
 
         for removed_file in client_bag - current_server_bag:
+            assert removed_file.checksum in data_pool
             log.debug("Asking client to remove %s (size: %r, path: %r)",
                       removed_file.checksum, removed_file.size,
                       removed_file.path)
