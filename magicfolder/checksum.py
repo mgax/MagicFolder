@@ -71,18 +71,26 @@ file_item_pattern = re.compile(r'^(?P<checksum>"[0-9a-f]{40}")\s*'
                                r'(?P<size>\d+)\s*'
                                r'(?P<path>".*")\s*$')
 
+def jstr_load(s):
+    assert isinstance(s, str)
+    return json.loads(s).encode('latin-1')
+
+def jstr_dump(s):
+    assert isinstance(s, str)
+    return json.dumps(s.decode('latin-1'))
+
 def string_to_file_item(s):
     m = file_item_pattern.match(s)
     assert m is not None, "malformed file entry: %r" % s
-    return FileItem(json.loads(m.group('path')),
-                    json.loads(m.group('checksum')),
+    return FileItem(jstr_load(m.group('path')),
+                    jstr_load(m.group('checksum')),
                     int(m.group('size')),
                     None)
 
 def file_item_to_string(file_item):
-    return "%s %10d %s" % (json.dumps(file_item.checksum),
+    return "%s %10d %s" % (jstr_dump(file_item.checksum),
                            file_item.size,
-                           json.dumps(file_item.path))
+                           jstr_dump(file_item.path))
 
 def read_version_file(fh):
     return imap(string_to_file_item, fh)
