@@ -6,6 +6,7 @@ from StringIO import StringIO
 import operator
 import logging
 from contextlib import contextmanager
+from itertools import count
 
 import picklemsg
 from blobdb import BlobDB
@@ -94,8 +95,17 @@ def server_sync(root_path, remote):
             current_version = latest_version + 1
             m = calculate_merge(old_bag, client_bag, server_bag)
             new_tree, conflict = m
-            assert not conflict
+
             server_bag = set(new_tree.itervalues())
+
+            for i in conflict:
+                for c in count(1):
+                    new_path = '%s.%d' % (i.path, c)
+                    if new_path not in new_tree:
+                        break
+                renamed_file = FileItem(new_path, i.checksum, i.size, i.time)
+                new_tree[renamed_file.path] = renamed_file
+                server_bag.add(renamed_file)
 
             log.debug("Client was outdated and had changes, "
                       "creating new version %d", current_version)

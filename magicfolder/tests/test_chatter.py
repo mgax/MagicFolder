@@ -28,6 +28,9 @@ f2 = quick_file_item('file_two', f2_data)
 f2a_data = 'some different data'
 f2a = quick_file_item('file_two', f2a_data)
 
+f2b_data = 'some dissimilar data'
+f2b = quick_file_item('file_two', f2b_data)
+
 f2big_data = '0123456789abcdef' * 64 * 1200 # 1.2 MB of data
 f2big = quick_file_item('file_two', f2big_data)
 
@@ -390,6 +393,103 @@ class ServerChatterTest(unittest.TestCase):
         with open(self.tmp_path + '/versions/3') as vf:
             v3 = set(read_version_file(vf))
         self.assertEqual(v3, set([f2a, f3a]))
+
+    def test_merge_conflicts(self):
+        f2a_rename = FileItem(f2a.path+'.1', f2a.checksum, f2a.size, f2a.time)
+        f3_rename = FileItem(f3.path+'.1', f3.checksum, f3.size, f3.time)
+
+        def test_chat(server):
+            yield 'sync', 1
+
+            server.expect('waiting_for_files', None)
+            yield 'file_meta', f1
+            yield 'file_meta', f2b
+            yield 'file_meta', f3a
+            yield 'done', None
+
+            server.expect('data', f2b.checksum)
+            yield 'file_chunk', f2b_data
+            yield 'file_end', None
+
+            server.expect('data', f3a.checksum)
+            yield 'file_chunk', f3a_data
+            yield 'file_end', None
+
+            server.expect('file_remove', f1)
+
+            server.expect('file_begin', f2a_rename)
+            server.expect('file_chunk', f2a_data)
+            server.expect('file_end', None)
+
+            server.expect('file_begin', f3_rename)
+            server.expect('file_chunk', f3_data)
+            server.expect('file_end', None)
+
+            server.expect('sync_complete', 3)
+            yield 'quit', None
+            server.expect('bye', None)
+
+        self.init_server({
+            0: {},
+            1: {f1: f1_data, f2: f2_data},
+            2: {f2a: f2a_data, f3: f3_data},
+        })
+        self.chat_server(test_chat)
+
+        with open(self.tmp_path + '/versions/3') as vf:
+            v3 = set(read_version_file(vf))
+        self.assertEqual(v3, set([f2b, f2a_rename, f3a, f3_rename]))
+
+    def test_merge_multiple_renames(self):
+        f2_1 = FileItem(f2.path+'.1', f2.checksum, f2.size, f2.time)
+        f2_2 = FileItem(f2.path+'.2', f2.checksum, f2.size, f2.time)
+        f2_3 = FileItem(f2.path+'.3', f2.checksum, f2.size, f2.time)
+        f2_4 = FileItem(f2.path+'.4', f2.checksum, f2.size, f2.time)
+
+        f2b_3 = FileItem(f2b.path+'.3', f2b.checksum, f2b.size, f2b.time)
+
+        def test_chat(server):
+            yield 'sync', 1
+
+            server.expect('waiting_for_files', None)
+            yield 'file_meta', f2a
+            yield 'file_meta', f2_1
+            yield 'file_meta', f2_2
+            yield 'file_meta', f2_3
+            yield 'file_meta', f2_4
+            yield 'done', None
+
+            server.expect('data', f2a.checksum)
+            yield 'file_chunk', f2a_data
+            yield 'file_end', None
+
+            server.expect('file_remove', f2_3)
+
+            server.expect('file_begin', f2b_3)
+            server.expect('file_chunk', f2b_data)
+            server.expect('file_end', None)
+
+            server.expect('sync_complete', 3)
+            yield 'quit', None
+            server.expect('bye', None)
+
+        self.init_server({
+            0: {},
+            1: {f2: f2_data,
+                f2_1: f2_data,
+                f2_2: f2_data,
+                f2_3: f2_data,
+                f2_4: f2_data},
+            2: {f2b: f2b_data,
+                f2_1: f2_data,
+                f2_2: f2_data,
+                f2_4: f2_data},
+        })
+        self.chat_server(test_chat)
+
+        with open(self.tmp_path + '/versions/3') as vf:
+            v3 = set(read_version_file(vf))
+        self.assertEqual(v3, set([f2a, f2_1, f2_2, f2b_3, f2_4]))
 
 
 if __name__ == '__main__':
