@@ -84,19 +84,19 @@ def server_sync(root_path, remote):
         assert old_bag == client_bag
         current_version = latest_version
 
-        for new_file in server_bag - client_bag:
-            log.debug("Sending file %s for path %r",
-                      new_file.checksum, new_file.path)
-            remote.send('file_begin', new_file)
-            with data_pool.read_file(new_file.checksum) as f:
-                remote.send_file(f)
-
         for removed_file in client_bag - server_bag:
             assert removed_file.checksum in data_pool
             log.debug("Asking client to remove %s (size: %r, path: %r)",
                       removed_file.checksum, removed_file.size,
                       removed_file.path)
             remote.send('file_remove', removed_file)
+
+        for new_file in server_bag - client_bag:
+            log.debug("Sending file %s for path %r",
+                      new_file.checksum, new_file.path)
+            remote.send('file_begin', new_file)
+            with data_pool.read_file(new_file.checksum) as f:
+                remote.send_file(f)
 
     else:
         if server_bag == client_bag:
