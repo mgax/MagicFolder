@@ -42,17 +42,17 @@ def server_sync(root_path, remote):
               latest_version, remote_base_version)
 
     with open_version_index(latest_version, 'rb') as f:
-        current_server_bag = set(read_version_file(f))
+        server_bag = set(read_version_file(f))
 
     if remote_base_version == latest_version:
         remote_outdated = False
-        old_server_bag = current_server_bag
+        old_bag = server_bag
     else:
         remote_outdated = True
-        old_server_bag = set()
+        old_bag = set()
         if remote_base_version != 0:
             with open_version_index(remote_base_version, 'rb') as f:
-                old_server_bag.update(read_version_file(f))
+                old_bag.update(read_version_file(f))
 
     remote.send('waiting_for_files')
 
@@ -77,21 +77,21 @@ def server_sync(root_path, remote):
 
     if remote_outdated:
         log.debug("Client was at old version, performing merge")
-        for file_item in old_server_bag - client_bag:
+        for file_item in old_bag - client_bag:
             log.debug("Removed by client: %r", file_item)
-        for file_item in client_bag - old_server_bag:
+        for file_item in client_bag - old_bag:
             log.debug("Added by client: %r", file_item)
-        assert old_server_bag == client_bag
+        assert old_bag == client_bag
         current_version = latest_version
 
-        for new_file in current_server_bag - client_bag:
+        for new_file in server_bag - client_bag:
             log.debug("Sending file %s for path %r",
                       new_file.checksum, new_file.path)
             remote.send('file_begin', new_file)
             with data_pool.read_file(new_file.checksum) as f:
                 remote.send_file(f)
 
-        for removed_file in client_bag - current_server_bag:
+        for removed_file in client_bag - server_bag:
             assert removed_file.checksum in data_pool
             log.debug("Asking client to remove %s (size: %r, path: %r)",
                       removed_file.checksum, removed_file.size,
@@ -99,7 +99,7 @@ def server_sync(root_path, remote):
             remote.send('file_remove', removed_file)
 
     else:
-        if current_server_bag == client_bag:
+        if server_bag == client_bag:
             current_version = latest_version
             log.debug("Client has no changes, staying at version %d",
                       current_version)
