@@ -11,6 +11,8 @@ import picklemsg
 from checksum import FileItem, repo_file_events
 from uilib import ColorfulUi, DummyUi, pretty_bytes
 
+UI_UPDATE_TIME = 0.5 # half a second
+
 log = logging.getLogger('magicfolder.client')
 
 def client_init(root_path, remote_url):
@@ -55,7 +57,7 @@ class ClientRepo(object):
                 file_item_map[i.checksum] = i
 
                 n += 1
-                if time() - t0 > 1:
+                if time() - t0 > UI_UPDATE_TIME:
                     t0 = time()
                     print_line("Reading local files... %d" % n)
         ui.out("Reading local files... %d done\n" % n)
@@ -91,6 +93,7 @@ class ClientRepo(object):
     def receive_remote_update(self, remote, ui, file_item_map):
         t0 = time()
         bytes_up = bytes_down = 0
+        files_new = set(); files_del = set()
         def bytes_msg():
             return ("Transferring... up: %s, down: %s"
                     % (pretty_bytes(bytes_up),
@@ -112,14 +115,16 @@ class ClientRepo(object):
                 elif msg == 'file_begin':
                     self._recv_file(payload, remote)
                     bytes_down += payload.size
+                    files_new.add(payload)
 
                 elif msg == 'file_remove':
                     self._remove_file(payload)
+                    files_del.add(payload)
 
                 else:
                     assert False, 'unexpected message %r' % msg
 
-                if time() - t0 > 1:
+                if time() - t0 > UI_UPDATE_TIME:
                     t0 = time()
                     print_line(bytes_msg())
 
@@ -128,6 +133,16 @@ class ClientRepo(object):
         assert payload >= self.last_sync
         self.update_last_sync(payload)
         log.debug("Sync complete, now at version %d", payload)
+
+        def print_files_colored(files, color):
+            for i in sorted(files):
+                with ui.colored(color) as color_print:
+                    color_print(i.path)
+                ui.out(' %s\n' % pretty_bytes(i.size))
+
+        print_files_colored(files_del, 'red')
+        print_files_colored(files_new, 'green')
+        ui.out("At version %d\n" % payload)
 
     def sync_with_remote(self, ui=DummyUi(), use_cache=False):
         with self.connect_to_remote() as remote:
