@@ -9,6 +9,7 @@ import argparse
 
 import picklemsg
 from checksum import FileItem, repo_file_events
+from uilib import ColorfulUi, DummyUi
 
 log = logging.getLogger('magicfolder.client')
 
@@ -39,14 +40,25 @@ class ClientRepo(object):
 
         yield pipe_to_remote(remote_url)
 
-    def send_local_status(self, remote, use_cache):
+    def send_local_status(self, remote, ui, use_cache):
         log.debug("Sync session, last_sync %r", self.last_sync)
 
-        file_item_map = {}
-        for i in repo_file_events(self.root_path, use_cache):
-            i_for_server = FileItem(i.path, i.checksum, i.size, None)
-            remote.send('file_meta', i_for_server)
-            file_item_map[i.checksum] = i
+        with ui.status_line() as print_line:
+            t0 = time()
+            file_item_map = {}
+            n = 0
+            print_line("Reading local files...")
+
+            for i in repo_file_events(self.root_path, use_cache):
+                i_for_server = FileItem(i.path, i.checksum, i.size, None)
+                remote.send('file_meta', i_for_server)
+                file_item_map[i.checksum] = i
+
+                n += 1
+                if time() - t0 > 1:
+                    t0 = time()
+                    print_line("Reading local files... %d" % n)
+        ui.out("Reading local files... %d done\n" % n)
 
         log.debug("Finished sending index to server")
         remote.send('done')
@@ -99,13 +111,13 @@ class ClientRepo(object):
         self.update_last_sync(payload)
         log.debug("Sync complete, now at version %d", payload)
 
-    def sync_with_remote(self, use_cache=False):
+    def sync_with_remote(self, ui=DummyUi(), use_cache=False):
         with self.connect_to_remote() as remote:
             remote.send('sync', self.last_sync)
             msg, payload = remote.recv()
             assert msg == 'waiting_for_files'
 
-            file_item_map = self.send_local_status(remote, use_cache)
+            file_item_map = self.send_local_status(remote, ui, use_cache)
 
             self.receive_remote_update(remote, file_item_map)
 
