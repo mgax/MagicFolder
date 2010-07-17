@@ -34,6 +34,9 @@ f2big = quick_file_item('file_two', f2big_data)
 f3_data = 'third data'
 f3 = quick_file_item('file_three', f3_data)
 
+f3a_data = 'third data, changed'
+f3a = quick_file_item('file_three', f3a_data)
+
 f4_data = 'fourth data'
 f4 = quick_file_item('file_four', f4_data)
 
@@ -357,6 +360,36 @@ class ServerChatterTest(unittest.TestCase):
         with open(self.tmp_path + '/versions/3') as vf:
             v3 = set(read_version_file(vf))
         self.assertEqual(v3, set([f3, f4]))
+
+    def test_merge_removed_but_changed(self):
+        def test_chat(server):
+            yield 'sync', 1
+
+            server.expect('waiting_for_files', None)
+            yield 'file_meta', f2a
+            yield 'done', None
+
+            server.expect('data', f2a.checksum)
+            yield 'file_chunk', f2a_data
+            yield 'file_end', None
+
+            server.expect('file_begin', f3a)
+            server.expect('file_chunk', f3a_data)
+            server.expect('file_end', None)
+
+            server.expect('sync_complete', 3)
+            yield 'quit', None
+            server.expect('bye', None)
+
+        self.init_server({
+            0: {},
+            1: {f2: f2_data, f3: f3_data},
+            2: {f3a: f3a_data},
+        })
+        self.chat_server(test_chat)
+        with open(self.tmp_path + '/versions/3') as vf:
+            v3 = set(read_version_file(vf))
+        self.assertEqual(v3, set([f2a, f3a]))
 
 
 if __name__ == '__main__':
