@@ -104,6 +104,7 @@ class ClientRepo(object):
 def pipe_to_remote(remote_spec):
     hostname, remote_path = remote_spec.split(':')
     child_args = ['ssh', hostname, 'mf-server', remote_path]
+    log.debug("running %r", child_args)
     p = Popen(child_args, bufsize=4096, stdin=PIPE, stdout=PIPE, stderr=PIPE)
     return picklemsg.Remote(p.stdout, p.stdin)
 
@@ -132,9 +133,6 @@ def main():
     args = parse_args()
     root_path = os.getcwd()
 
-    logging.basicConfig(level=logging.DEBUG,
-                        filename=path.join(root_path, '.mf', 'debug.log'))
-
     if args.subcmd == 'init':
         if args.server:
             from server import server_init
@@ -143,9 +141,13 @@ def main():
             assert len(args.remote) == 1
             client_init(root_path, args.remote[0])
     elif args.subcmd == 'sync':
+        logging.basicConfig(level=logging.DEBUG,
+                            filename=path.join(root_path, '.mf', 'debug.log'))
+
         try:
             ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache)
         except:
             log.exception("Exception while performing sync")
+            raise
     else:
         raise ValueError('bad param')
