@@ -187,16 +187,24 @@ class MockRemote(Remote):
         assert len(unread_chatter) == 0, "Unread chatter: %r" % unread_chatter
         assert len(self.queue) == 0, "Queue not empty: %r" % list(self.queue)
 
-f1 = FileItem('file_one',
-              'baf34551fecb48acc3da868eb85e1b6dac9de356', 9, None)
-f2 = FileItem('file_two',
-              '83ca2344ac9901d5590bb59b7be651869ef5fbd9', 14, None)
-f2big = FileItem('file_two',
-                 '311d6913794296d8bc3557fa8745d938bf9c7b87', 1228800, None)
-f3 = FileItem('file_three',
-              '121f466589332999f502e9ba1882f7e081980501', 10, None)
-f4 = FileItem('file_four',
-              '122bd3cfcf43df3db24b97c53db2e409f48f6f1e', 11, None)
+def quick_file_item(file_path, file_data):
+    return FileItem(file_path, sha1hex(file_data), len(file_data), None)
+
+f1_data = 'some data'
+f1 = quick_file_item('file_one', f1_data)
+
+f2_data = 'some more data'
+f2 = quick_file_item('file_two', f2_data)
+
+f2big_data = '0123456789abcdef' * 64 * 1200 # 1.2 MB of data
+f2big = quick_file_item('file_two', f2big_data)
+
+f3_data = 'third data'
+f3 = quick_file_item('file_three', f3_data)
+
+f4_data = 'fourth data'
+f4 = quick_file_item('file_four', f4_data)
+
 class ClientChatterTest(unittest.TestCase):
     def setUp(self):
         self.tmp_path = tempfile.mkdtemp()
@@ -356,11 +364,11 @@ class ServerChatterTest(unittest.TestCase):
 
         for v, file_tree in version_trees.iteritems():
             with open(self.tmp_path + '/versions/%d' % v, 'wb') as ver_f:
-                for file_path, file_data in file_tree.iteritems():
+                for i, data in file_tree.iteritems():
                     ver_f.write('"%s" %10d "%s"\n' %
-                            (sha1hex(file_data), len(file_data), file_path))
-                    with objects.write_file(sha1hex(file_data)) as data_f:
-                        data_f.write(file_data)
+                                (i.checksum, i.size, i.path))
+                    with objects.write_file(i.checksum) as data_f:
+                        data_f.write(data)
 
     def chat_server(self, test_chat):
         mock_remote = MockRemote(test_chat)
@@ -390,8 +398,8 @@ class ServerChatterTest(unittest.TestCase):
             yield 'file_meta', f2
             yield 'done', None
 
-            server.expect('data', '83ca2344ac9901d5590bb59b7be651869ef5fbd9')
-            yield 'file_chunk', 'some more data'
+            server.expect('data', f2.checksum)
+            yield 'file_chunk', f2_data
             yield 'file_end', None
 
             server.expect('sync_complete', 2)
@@ -401,7 +409,7 @@ class ServerChatterTest(unittest.TestCase):
 
         self.init_server({
             0: {},
-            1: {'file_one': 'some data'},
+            1: {f1: f1_data},
         })
         self.chat_server(test_chat)
         self.assertEqual(set(os.listdir(self.tmp_path + '/objects')),
@@ -416,7 +424,7 @@ class ServerChatterTest(unittest.TestCase):
             yield 'done', None
 
             server.expect('file_begin', f2)
-            server.expect('file_chunk', 'some more data')
+            server.expect('file_chunk', f2_data)
             server.expect('file_end', None)
 
             server.expect('sync_complete', 2)
@@ -425,8 +433,8 @@ class ServerChatterTest(unittest.TestCase):
 
         self.init_server({
             0: {},
-            1: {'file_one': 'some data'},
-            2: {'file_one': 'some data', 'file_two': 'some more data'},
+            1: {f1: f1_data},
+            2: {f1: f1_data, f2: f2_data},
         })
         self.chat_server(test_chat)
 
@@ -447,8 +455,8 @@ class ServerChatterTest(unittest.TestCase):
 
         self.init_server({
             0: {},
-            1: {'file_one': 'some data', 'file_two': 'some more data'},
-            2: {'file_one': 'some data'},
+            1: {f1: f1_data, f2: f2_data},
+            2: {f1: f1_data},
         })
         self.chat_server(test_chat)
 
@@ -461,14 +469,14 @@ class ServerChatterTest(unittest.TestCase):
             yield 'file_meta', f4
             yield 'done', None
 
-            server.expect('data', '122bd3cfcf43df3db24b97c53db2e409f48f6f1e')
-            yield 'file_chunk', 'fourth data'
+            server.expect('data', f4.checksum)
+            yield 'file_chunk', f4_data
             yield 'file_end', None
 
             server.expect('file_remove', f2)
 
             server.expect('file_begin', f3)
-            server.expect('file_chunk', 'third data')
+            server.expect('file_chunk', f3_data)
             server.expect('file_end', None)
 
             server.expect('sync_complete', 3)
@@ -477,8 +485,8 @@ class ServerChatterTest(unittest.TestCase):
 
         self.init_server({
             0: {},
-            1: {'file_one': 'some data', 'file_two': 'some more data'},
-            2: {'file_one': 'some data', 'file_three': 'third data'},
+            1: {f1: f1_data, f2: f2_data},
+            2: {f1: f1_data, f3: f3_data},
         })
         self.chat_server(test_chat)
         with open(self.tmp_path + '/versions/3') as vf:
