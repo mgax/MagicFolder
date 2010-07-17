@@ -52,6 +52,30 @@ class ClientRepo(object):
         remote.send('done')
         return file_item_map
 
+    def _send_file(self, file_item, remote):
+        log.debug("uploading file %s, path %r",
+                  file_item.checksum, file_item.path)
+
+        file_path = path.join(self.root_path, file_item.path)
+        with open(file_path, 'rb') as data_file:
+            remote.send_file(data_file)
+
+    def _recv_file(self, file_item, remote):
+        log.debug("Receiving file %r %r", file_item.path, file_item.checksum)
+
+        file_path = path.join(self.root_path, file_item.path)
+
+        folder_path = path.dirname(file_path)
+        if not path.isdir(folder_path):
+            os.makedirs(folder_path)
+
+        with open(file_path, 'wb') as local_file:
+            remote.recv_file(local_file)
+
+    def _remove_file(self, file_item):
+        log.debug("Removing file %r", file_item.path)
+        os.unlink(path.join(self.root_path, file_item.path))
+
     def receive_remote_update(self, remote, file_item_map):
         while True:
             msg, payload = remote.recv()
@@ -60,26 +84,13 @@ class ClientRepo(object):
 
             elif msg == 'data':
                 file_item = file_item_map[payload]
-                file_path = path.join(self.root_path, file_item.path)
-                log.debug("uploading file %s, path %r",
-                          file_item.checksum, file_item.path)
-                with open(file_path, 'rb') as data_file:
-                    remote.send_file(data_file)
+                self._send_file(file_item, remote)
 
             elif msg == 'file_begin':
-                log.debug("Receiving file %r %r",
-                          payload.path, payload.checksum)
-                file_path = path.join(self.root_path, payload.path)
-                folder_path = path.dirname(file_path)
-                if not path.isdir(folder_path):
-                    os.makedirs(folder_path)
-
-                with open(file_path, 'wb') as local_file:
-                    remote.recv_file(local_file)
+                self._recv_file(payload, remote)
 
             elif msg == 'file_remove':
-                log.debug("Removing file %r", payload.path)
-                os.unlink(path.join(self.root_path, payload.path))
+                self._remove_file(payload)
 
             else:
                 assert False, 'unexpected message %r' % msg
