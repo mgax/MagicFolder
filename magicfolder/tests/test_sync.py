@@ -13,7 +13,7 @@ from magicfolder.picklemsg import Remote
 from magicfolder.blobdb import BlobDB
 from magicfolder.client import ClientRepo
 from magicfolder.server import server_sync, try_except_send_remote
-from magicfolder.checksum import FileItem
+from magicfolder.checksum import FileItem, read_version_file
 
 def sha1hex(s):
     return sha1(s).hexdigest()
@@ -193,6 +193,10 @@ f2 = FileItem('file_two',
               '83ca2344ac9901d5590bb59b7be651869ef5fbd9', 14, None)
 f2big = FileItem('file_two',
                  '311d6913794296d8bc3557fa8745d938bf9c7b87', 1228800, None)
+f3 = FileItem('file_three',
+              '121f466589332999f502e9ba1882f7e081980501', 10, None)
+f4 = FileItem('file_four',
+              '122bd3cfcf43df3db24b97c53db2e409f48f6f1e', 11, None)
 class ClientChatterTest(unittest.TestCase):
     def setUp(self):
         self.tmp_path = tempfile.mkdtemp()
@@ -447,6 +451,39 @@ class ServerChatterTest(unittest.TestCase):
             2: {'file_one': 'some data'},
         })
         self.chat_server(test_chat)
+
+    def test_merge_simple(self):
+        def test_chat(server):
+            yield 'sync', 1
+
+            server.expect('waiting_for_files', None)
+            yield 'file_meta', f2
+            yield 'file_meta', f4
+            yield 'done', None
+
+            server.expect('data', '122bd3cfcf43df3db24b97c53db2e409f48f6f1e')
+            yield 'file_chunk', 'fourth data'
+            yield 'file_end', None
+
+            server.expect('file_remove', f2)
+
+            server.expect('file_begin', f3)
+            server.expect('file_chunk', 'third data')
+            server.expect('file_end', None)
+
+            server.expect('sync_complete', 3)
+            yield 'quit', None
+            server.expect('bye', None)
+
+        self.init_server({
+            0: {},
+            1: {'file_one': 'some data', 'file_two': 'some more data'},
+            2: {'file_one': 'some data', 'file_three': 'third data'},
+        })
+        self.chat_server(test_chat)
+        with open(self.tmp_path + '/versions/3') as vf:
+            v3 = set(read_version_file(vf))
+        self.assertEqual(v3, set([f3, f4]))
 
 
 if __name__ == '__main__':

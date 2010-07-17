@@ -84,8 +84,23 @@ def server_sync(root_path, remote):
             log.debug("Removed by client: %r", file_item)
         for file_item in client_bag - old_bag:
             log.debug("Added by client: %r", file_item)
-        assert old_bag == client_bag
-        current_version = latest_version
+
+        if old_bag == client_bag:
+            current_version = latest_version
+            log.debug("Client was outdated but had no changes, "
+                      "staying at version %d", current_version)
+
+        else:
+            current_version = latest_version + 1
+            m = calculate_merge(old_bag, client_bag, server_bag)
+            new_tree, conflict = m
+            assert not conflict
+            server_bag = set(new_tree.itervalues())
+
+            log.debug("Client was outdated and had changes, "
+                      "creating new version %d", current_version)
+            with open_version_index(current_version, 'wb') as f:
+                dump_fileitems(f, server_bag)
 
         for removed_file in client_bag - server_bag:
             assert removed_file.checksum in data_pool
