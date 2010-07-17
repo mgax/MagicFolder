@@ -41,6 +41,17 @@ class DummyUi(ColorfulUi):
     def out(self, text):
         pass
 
+def pretty_bytes(n):
+    K = 1024
+    if n < K:
+        return "%d bytes" % n
+    elif n < K ** 2:
+        return "%.1f KiB" % (n / 1024.)
+    elif n < K ** 3:
+        return "%.1f MiB" % (n / (1024*1024.))
+    else:
+        return "%.1f GiB" % (n / (1024*1024*1024.))
+
 
 def demo():
     cui = ColorfulUi()

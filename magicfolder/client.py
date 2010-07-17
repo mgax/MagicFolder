@@ -9,7 +9,7 @@ import argparse
 
 import picklemsg
 from checksum import FileItem, repo_file_events
-from uilib import ColorfulUi, DummyUi
+from uilib import ColorfulUi, DummyUi, pretty_bytes
 
 log = logging.getLogger('magicfolder.client')
 
@@ -88,24 +88,42 @@ class ClientRepo(object):
         log.debug("Removing file %r", file_item.path)
         os.unlink(path.join(self.root_path, file_item.path))
 
-    def receive_remote_update(self, remote, file_item_map):
-        while True:
-            msg, payload = remote.recv()
-            if msg == 'sync_complete':
-                break
+    def receive_remote_update(self, remote, ui, file_item_map):
+        t0 = time()
+        bytes_up = bytes_down = 0
+        def bytes_msg():
+            return ("Transferring... up: %s, down: %s"
+                    % (pretty_bytes(bytes_up),
+                       pretty_bytes(bytes_down)))
 
-            elif msg == 'data':
-                file_item = file_item_map[payload]
-                self._send_file(file_item, remote)
+        with ui.status_line() as print_line:
+            print_line(bytes_msg())
 
-            elif msg == 'file_begin':
-                self._recv_file(payload, remote)
+            while True:
+                msg, payload = remote.recv()
+                if msg == 'sync_complete':
+                    break
 
-            elif msg == 'file_remove':
-                self._remove_file(payload)
+                elif msg == 'data':
+                    file_item = file_item_map[payload]
+                    self._send_file(file_item, remote)
+                    bytes_up += file_item.size
 
-            else:
-                assert False, 'unexpected message %r' % msg
+                elif msg == 'file_begin':
+                    self._recv_file(payload, remote)
+                    bytes_down += payload.size
+
+                elif msg == 'file_remove':
+                    self._remove_file(payload)
+
+                else:
+                    assert False, 'unexpected message %r' % msg
+
+                if time() - t0 > 1:
+                    t0 = time()
+                    print_line(bytes_msg())
+
+        ui.out(bytes_msg() + "\n")
 
         assert payload >= self.last_sync
         self.update_last_sync(payload)
@@ -119,7 +137,7 @@ class ClientRepo(object):
 
             file_item_map = self.send_local_status(remote, ui, use_cache)
 
-            self.receive_remote_update(remote, file_item_map)
+            self.receive_remote_update(remote, ui, file_item_map)
 
             remote.send('quit')
             assert remote.recv()[0] == 'bye'
