@@ -65,9 +65,7 @@ def server_sync(root_path, remote):
             break
 
         assert msg == 'file_meta'
-
-        client_bag.add(FileItem(payload['path'], payload['checksum'],
-                                payload['size'], None))
+        client_bag.add(payload)
 
     for i in client_bag:
         if i.checksum not in data_pool:
@@ -87,14 +85,9 @@ def server_sync(root_path, remote):
         current_version = latest_version
 
         for new_file in current_server_bag - client_bag:
-            file_meta = {
-                'path': new_file.path,
-                'checksum': new_file.checksum,
-                'size': new_file.size,
-            }
             log.debug("Sending file %s for path %r",
                       new_file.checksum, new_file.path)
-            remote.send('file_begin', file_meta)
+            remote.send('file_begin', new_file)
             with data_pool.read_file(new_file.checksum) as f:
                 remote.send_file(f)
 
@@ -103,7 +96,7 @@ def server_sync(root_path, remote):
             log.debug("Asking client to remove %s (size: %r, path: %r)",
                       removed_file.checksum, removed_file.size,
                       removed_file.path)
-            remote.send('file_remove', removed_file.path)
+            remote.send('file_remove', removed_file)
 
     else:
         if current_server_bag == client_bag:

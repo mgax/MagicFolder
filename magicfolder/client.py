@@ -8,7 +8,7 @@ from contextlib import contextmanager
 import argparse
 
 import picklemsg
-from checksum import repo_file_events
+from checksum import FileItem, repo_file_events
 
 log = logging.getLogger('magicfolder.client')
 
@@ -43,14 +43,10 @@ class ClientRepo(object):
         log.debug("Sync session, last_sync %r", self.last_sync)
 
         file_item_map = {}
-        for file_item in repo_file_events(self.root_path, use_cache):
-            file_meta = {
-                'path': file_item.path,
-                'checksum': file_item.checksum,
-                'size': file_item.size,
-            }
-            remote.send('file_meta', file_meta)
-            file_item_map[file_item.checksum] = file_item
+        for i in repo_file_events(self.root_path, use_cache):
+            i_for_server = FileItem(i.path, i.checksum, i.size, None)
+            remote.send('file_meta', i_for_server)
+            file_item_map[i.checksum] = i
 
         log.debug("Finished sending index to server")
         remote.send('done')
@@ -72,8 +68,8 @@ class ClientRepo(object):
 
             elif msg == 'file_begin':
                 log.debug("Receiving file %r %r",
-                          payload['path'], payload['checksum'])
-                file_path = path.join(self.root_path, payload['path'])
+                          payload.path, payload.checksum)
+                file_path = path.join(self.root_path, payload.path)
                 folder_path = path.dirname(file_path)
                 if not path.isdir(folder_path):
                     os.makedirs(folder_path)
@@ -82,8 +78,8 @@ class ClientRepo(object):
                     remote.recv_file(local_file)
 
             elif msg == 'file_remove':
-                log.debug("Removing file %r", payload)
-                os.unlink(path.join(self.root_path, payload))
+                log.debug("Removing file %r", payload.path)
+                os.unlink(path.join(self.root_path, payload.path))
 
             else:
                 assert False, 'unexpected message %r' % msg
