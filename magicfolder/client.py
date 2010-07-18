@@ -178,9 +178,9 @@ def parse_args():
 
     sync_parser = subparsers.add_parser('sync',
         help="synchronize with server")
-    sync_parser.add_argument("-t", "--trust",
-        action="store_true", dest="use_cache", default=False,
-        help="only check timestamp and size")
+    sync_parser.add_argument("-p", "--paranoid",
+        action="store_false", dest="use_cache", default=True,
+        help="don't trust timestamp and size, always calculate checksum")
 
     args = parser.parse_args()
     return args
