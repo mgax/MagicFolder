@@ -201,7 +201,8 @@ def main():
                             filename=path.join(root_path, '.mf', 'debug.log'))
 
         try:
-            ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache)
+            ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache,
+                                                   ui=ColorfulUi())
         except:
             log.exception("Exception while performing sync")
             raise
