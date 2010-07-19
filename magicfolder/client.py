@@ -89,6 +89,14 @@ class ClientRepo(object):
     def _remove_file(self, file_item):
         log.debug("Removing file %r", file_item.path)
         os.unlink(path.join(self.root_path, file_item.path))
+        folder = path.dirname(file_item.path)
+
+        while folder:
+            folder_abs = path.join(self.root_path, folder)
+            if os.listdir(folder_abs):
+                break
+            os.rmdir(folder_abs)
+            folder = path.dirname(folder)
 
     def receive_remote_update(self, remote, ui, file_item_map):
         t0 = time()

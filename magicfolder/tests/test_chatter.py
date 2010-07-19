@@ -226,6 +226,30 @@ class ClientChatterTest(unittest.TestCase):
         self.assertEqual(set(os.listdir(self.tmp_path)),
                          set(['.mf', 'file_two']))
 
+    def test_remove_empty_folders(self):
+        f1_sub = quick_file_item('a/b/c/file_one', f1_data)
+        def test_chat(client):
+            client.expect('sync', 0)
+            yield 'waiting_for_files', None
+
+            client.expect('file_meta', f1_sub)
+
+            client.expect('done', None)
+            yield 'file_remove', f1_sub
+            yield 'sync_complete', 1
+            yield 'commit_diff', {'added': set(), 'removed': set()}
+
+            client.expect('quit', None)
+            yield 'bye', None
+
+        self.init_client(0, {
+            'a/b/c/file_one': 'some data',
+        })
+        self.assertEqual(set(os.listdir(self.tmp_path)), set(['.mf', 'a']))
+        self.chat_client(test_chat)
+        self.assertEqual(set(os.listdir(self.tmp_path)), set(['.mf']))
+
+
 class ServerChatterTest(unittest.TestCase):
     def setUp(self):
         self.tmp_path = tempfile.mkdtemp()
