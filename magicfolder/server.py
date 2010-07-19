@@ -91,12 +91,14 @@ def server_sync(root_path, remote):
             log.debug("Client was outdated but had no changes, "
                       "staying at version %d", current_version)
 
+            new_server_bag = server_bag
+
         else:
             current_version = latest_version + 1
             m = calculate_merge(old_bag, client_bag, server_bag)
             new_tree, conflict = m
 
-            server_bag = set(new_tree.itervalues())
+            new_server_bag = set(new_tree.itervalues())
 
             for i in conflict:
                 for c in count(1):
@@ -105,21 +107,21 @@ def server_sync(root_path, remote):
                         break
                 renamed_file = FileItem(new_path, i.checksum, i.size, i.time)
                 new_tree[renamed_file.path] = renamed_file
-                server_bag.add(renamed_file)
+                new_server_bag.add(renamed_file)
 
             log.debug("Client was outdated and had changes, "
                       "creating new version %d", current_version)
             with open_version_index(current_version, 'wb') as f:
-                dump_fileitems(f, server_bag)
+                dump_fileitems(f, new_server_bag)
 
-        for removed_file in client_bag - server_bag:
+        for removed_file in client_bag - new_server_bag:
             assert removed_file.checksum in data_pool
             log.debug("Asking client to remove %s (size: %r, path: %r)",
                       removed_file.checksum, removed_file.size,
                       removed_file.path)
             remote.send('file_remove', removed_file)
 
-        for new_file in server_bag - client_bag:
+        for new_file in new_server_bag - client_bag:
             log.debug("Sending file %s for path %r",
                       new_file.checksum, new_file.path)
             remote.send('file_begin', new_file)
@@ -138,8 +140,15 @@ def server_sync(root_path, remote):
             with open_version_index(current_version, 'wb') as f:
                 dump_fileitems(f, client_bag)
 
+        new_server_bag = client_bag
+
     log.debug("Sync complete")
     remote.send('sync_complete', current_version)
+
+    remote.send('commit_diff', {
+        'added': new_server_bag - server_bag,
+        'removed': server_bag - new_server_bag,
+    })
 
     msg, payload = remote.recv()
     assert msg == 'quit'

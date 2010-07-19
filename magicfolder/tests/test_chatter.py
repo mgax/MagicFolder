@@ -108,6 +108,7 @@ class ClientChatterTest(unittest.TestCase):
             client.expect('done', None)
 
             yield 'sync_complete', 0
+            yield 'commit_diff', {'added': set(), 'removed': set()}
             client.expect('quit', None)
             yield 'bye', None
 
@@ -124,6 +125,7 @@ class ClientChatterTest(unittest.TestCase):
             client.expect('done', None)
 
             yield 'sync_complete', 1
+            yield 'commit_diff', {'added': set([f1, f2]), 'removed': set()}
             client.expect('quit', None)
             yield 'bye', None
 
@@ -153,6 +155,7 @@ class ClientChatterTest(unittest.TestCase):
             client.expect('file_end', None)
 
             yield 'sync_complete', 1
+            yield 'commit_diff', {'added': set([f1, f2big]), 'removed': set()}
             client.expect('quit', None)
 
             yield 'bye', None
@@ -181,6 +184,7 @@ class ClientChatterTest(unittest.TestCase):
             yield 'file_end', None
 
             yield 'sync_complete', 1
+            yield 'commit_diff', {'added': set(), 'removed': set()}
             client.expect('quit', None)
             yield 'bye', None
 
@@ -209,6 +213,7 @@ class ClientChatterTest(unittest.TestCase):
             client.expect('done', None)
             yield 'file_remove', f1
             yield 'sync_complete', 1
+            yield 'commit_diff', {'added': set(), 'removed': set()}
 
             client.expect('quit', None)
             yield 'bye', None
@@ -253,6 +258,7 @@ class ServerChatterTest(unittest.TestCase):
 
             yield 'done', None
             server.expect('sync_complete', 0)
+            server.expect('commit_diff', {'added': set(), 'removed': set()})
 
             yield 'quit', None
             server.expect('bye', None)
@@ -274,6 +280,8 @@ class ServerChatterTest(unittest.TestCase):
             yield 'file_end', None
 
             server.expect('sync_complete', 2)
+            server.expect('commit_diff', {'added': set([f2]),
+                                          'removed': set()})
             yield 'quit', None
 
             server.expect('bye', None)
@@ -299,6 +307,7 @@ class ServerChatterTest(unittest.TestCase):
             server.expect('file_end', None)
 
             server.expect('sync_complete', 2)
+            server.expect('commit_diff', {'added': set(), 'removed': set()})
             yield 'quit', None
             server.expect('bye', None)
 
@@ -321,6 +330,7 @@ class ServerChatterTest(unittest.TestCase):
             server.expect('file_remove', f2)
 
             server.expect('sync_complete', 2)
+            server.expect('commit_diff', {'added': set(), 'removed': set()})
             yield 'quit', None
             server.expect('bye', None)
 
@@ -351,6 +361,8 @@ class ServerChatterTest(unittest.TestCase):
             server.expect('file_end', None)
 
             server.expect('sync_complete', 3)
+            server.expect('commit_diff', {'added': set([f4]),
+                                          'removed': set([f1])})
             yield 'quit', None
             server.expect('bye', None)
 
@@ -381,6 +393,8 @@ class ServerChatterTest(unittest.TestCase):
             server.expect('file_end', None)
 
             server.expect('sync_complete', 3)
+            server.expect('commit_diff', {'added': set([f2a]),
+                                          'removed': set()})
             yield 'quit', None
             server.expect('bye', None)
 
@@ -426,6 +440,9 @@ class ServerChatterTest(unittest.TestCase):
             server.expect('file_end', None)
 
             server.expect('sync_complete', 3)
+            server.expect('commit_diff', {'added': set([f2b, f2a_rename,
+                                                        f3a, f3_rename]),
+                                          'removed': set([f2a, f3])})
             yield 'quit', None
             server.expect('bye', None)
 
@@ -470,6 +487,8 @@ class ServerChatterTest(unittest.TestCase):
             server.expect('file_end', None)
 
             server.expect('sync_complete', 3)
+            server.expect('commit_diff', {'added': set([f2a, f2b_3]),
+                                          'removed': set([f2b])})
             yield 'quit', None
             server.expect('bye', None)
 

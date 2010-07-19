@@ -134,14 +134,23 @@ class ClientRepo(object):
         self.update_last_sync(payload)
         log.debug("Sync complete, now at version %d", payload)
 
-        def print_files_colored(files, color):
+        msg, diff = remote.recv()
+        assert msg == 'commit_diff'
+
+        def print_files_colored(files, color, size=False):
             for i in sorted(files):
                 with ui.colored(color) as color_print:
-                    color_print(i.path)
-                ui.out(' %s\n' % pretty_bytes(i.size))
+                    color_print(' ' + i.path)
+                if size:
+                    ui.out(' %s' % pretty_bytes(i.size))
+                ui.out('\n')
 
+        ui.out("Saving changes to server ...\n")
+        print_files_colored(diff['removed'], 'red')
+        print_files_colored(diff['added'], 'green', size=True)
+        ui.out("Updating local copy ...\n")
         print_files_colored(files_del, 'red')
-        print_files_colored(files_new, 'green')
+        print_files_colored(files_new, 'green', size=True)
         ui.out("At version %d\n" % payload)
 
     def sync_with_remote(self, ui=DummyUi(), use_cache=False):
