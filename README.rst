@@ -28,7 +28,13 @@ local changes, the server appends them to its version history, and sends
 back a list of changes made by other clients.
 
 Synchronization happens over SSH and is invoked manually. Don't think
-about touching any file during a sync because you will *lose your data*.
+about touching any file during a sync because you **will** lose your
+data.
+
+Usually files will be smoothly added and removed by clients, but if
+there is a conflict, MagicFolder will rename one of the versions. You
+should best know to solve the conflict; when you're done, simply remove
+the extra file.
 
 Issues and caveats
 ------------------
@@ -38,7 +44,3 @@ In particular there is no provision for detecting changes to files
 during synchronization or recovering from errors. The client-server
 chatter protocol is also in flux, so be sure to use the same version of
 MagicFolder on both client and server.
-
-There is no support yet for merging local and remote changes, and
-resolving conflicts - synchronization is simply aborted - but this
-essential feature is in the works.
