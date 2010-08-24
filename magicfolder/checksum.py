@@ -3,7 +3,7 @@ from os import path
 from collections import namedtuple
 from hashlib import sha1
 import cPickle as pickle
-from itertools import imap
+from itertools import imap, ifilterfalse
 from contextlib import contextmanager
 import re
 import json
@@ -12,16 +12,38 @@ FileItem = namedtuple('FileItem', 'path checksum size time')
 
 CHUNK_SIZE = 64 * 1024 # 64 KB
 
-def repo_files(root_path):
+def repo_files(root_path, skip):
     assert not root_path.endswith('/')
     for parent_path, dir_names, file_names in os.walk(root_path):
         parent_rel_path = parent_path[len(root_path):]
         if parent_rel_path == '':
             dir_names.remove('.mf')
-        for name in file_names:
+        dir_names[:] = ifilterfalse(skip, dir_names)
+        for name in ifilterfalse(skip, file_names):
             yield (parent_rel_path + '/' + name)[1:]
 
+def parse_ignore_file(f):
+    rules = []
+    for line in imap(str.strip, f):
+        rules.append(line)
+
+    def skip(p):
+        for r in rules:
+            if p == r:
+                return True
+        else:
+            return False
+
+    return skip
+
 def repo_file_events(root_path, use_cache=False):
+    ignore_path = path.join(root_path, '.mfignore')
+    if path.isfile(ignore_path):
+        with open(ignore_path, 'r') as f:
+            skip = parse_ignore_file(f)
+    else:
+        skip = lambda p: False
+
     cache_path = path.join(root_path, '.mf/cache')
 
     if use_cache and path.isfile(cache_path):
@@ -32,7 +54,7 @@ def repo_file_events(root_path, use_cache=False):
 
     new_cache = {}
 
-    for file_path in repo_files(root_path):
+    for file_path in repo_files(root_path, skip):
         file_full_path = path.join(root_path, file_path)
         file_stat = os.stat(file_full_path)
         file_size = file_stat.st_size
