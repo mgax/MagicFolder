@@ -23,13 +23,21 @@ def repo_files(root_path, skip):
             yield (parent_rel_path + '/' + name)[1:]
 
 def parse_ignore_file(f):
+    def rule(line):
+        if line.startswith('*'):
+            return lambda p: p.endswith(line[1:])
+        elif line.endswith('*'):
+            return lambda p: p.startswith(line[:-1])
+        else:
+            return lambda p: p == line
+
     rules = []
     for line in imap(str.strip, f):
-        rules.append(line)
+        rules.append(rule(line))
 
     def skip(p):
         for r in rules:
-            if p == r:
+            if r(p):
                 return True
         else:
             return False

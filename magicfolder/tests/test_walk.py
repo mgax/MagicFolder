@@ -32,5 +32,12 @@ class WalkTest(unittest.TestCase):
         self.tmp.join('.mfignore').write('fa\n')
         assert self.walk_repo() == set(['fb/photo.png', '.mfignore'])
 
+        # exclude with wildcard
+        self.tmp.join('.mfignore').write('*.png\n')
+        assert self.walk_repo() == set(['fa/image.jpg', '.mfignore'])
+
+        self.tmp.join('.mfignore').write('image*\n')
+        assert self.walk_repo() == set(['fb/photo.png', '.mfignore'])
+
 if __name__ == '__main__':
     unittest.main()
