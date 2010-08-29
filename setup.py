@@ -18,5 +18,6 @@ setup(
     packages=find_packages(),
     install_requires=['argparse'],
     url="http://github.com/alex-morega/MagicFolder",
-    entry_points={'console_scripts': ['mf = magicfolder.client:main']},
+    entry_points={'console_scripts': ['mf = magicfolder.client:main',
+                                      'mf-server = magicfolder.server:main']},
 )
