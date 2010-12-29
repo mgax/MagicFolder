@@ -10,7 +10,7 @@ from contextlib import contextmanager
 
 from magicfolder.picklemsg import Remote
 from magicfolder.blobdb import BlobDB
-from magicfolder.client import ClientRepo
+from magicfolder.client import SyncClient, WorkingTree
 from magicfolder.server import server_sync, try_except_send_remote
 
 def sha1hex(s):
@@ -30,15 +30,6 @@ class TestRemote(Remote):
             print "error from remote endpoint\n%s" % payload
         return msg, payload
 
-class TestClientRepo(ClientRepo):
-    def __init__(self, root_path, remote):
-        super(TestClientRepo, self).__init__(root_path)
-        self._test_remote = remote
-
-    @contextmanager
-    def connect_to_remote(self):
-        yield self._test_remote
-
 def do_server_loop(root_path, in_queue, out_queue):
     remote = TestRemote(in_queue, out_queue)
     with try_except_send_remote(remote):
@@ -46,7 +37,7 @@ def do_server_loop(root_path, in_queue, out_queue):
 
 def do_client_sync(root_path, in_queue, out_queue):
     remote = TestRemote(in_queue, out_queue)
-    TestClientRepo(root_path, remote).sync_with_remote()
+    SyncClient(WorkingTree(root_path), remote).sync_with_remote()
 
 def do_client_server(client_root, server_root):
     c2s = Queue()

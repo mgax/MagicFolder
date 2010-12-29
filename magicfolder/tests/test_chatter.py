@@ -10,8 +10,7 @@ from magicfolder.picklemsg import Remote
 from magicfolder.blobdb import BlobDB
 from magicfolder.server import server_sync
 from magicfolder.checksum import FileItem, read_version_file
-
-from test_sync import TestClientRepo
+from magicfolder.client import WorkingTree, SyncClient
 
 def sha1hex(s):
     return sha1(s).hexdigest()
@@ -97,7 +96,7 @@ class ClientChatterTest(unittest.TestCase):
 
     def chat_client(self, test_chat):
         mock_remote = MockRemote(test_chat)
-        TestClientRepo(self.tmp_path, mock_remote).sync_with_remote()
+        SyncClient(WorkingTree(self.tmp_path), mock_remote).sync_with_remote()
         mock_remote.done()
 
     def test_empty_sync(self):

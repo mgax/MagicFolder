@@ -22,7 +22,7 @@ def client_init(root_path, remote_url):
     with open(path.join(root_path, '.mf', 'last_sync'), 'wb') as f:
         f.write("0\n")
 
-class ClientRepo(object):
+class WorkingTree(object):
     def __init__(self, root_path):
         self.root_path = root_path
         with open(path.join(self.root_path, '.mf', 'last_sync'), 'rb') as f:
@@ -33,61 +33,25 @@ class ClientRepo(object):
         with open(path.join(self.root_path, '.mf', 'last_sync'), 'wb') as f:
             f.write("%d\n" % new_value)
 
-    @contextmanager
-    def connect_to_remote(self):
+    def _get_remote_url(self):
         with open(path.join(self.root_path, '.mf', 'remote'), 'rb') as f:
-            remote_url = f.read().strip()
+            return f.read().strip()
 
-        log.debug("Connecting to server %r", remote_url)
+    def iter_files(self, use_cache):
+        return repo_file_events(self.root_path, use_cache)
 
-        yield pipe_to_remote(remote_url)
-
-    def send_local_status(self, remote, ui, use_cache):
-        log.debug("Sync session, last_sync %r", self.last_sync)
-
-        with ui.status_line() as print_line:
-            t0 = time()
-            file_item_map = {}
-            n = 0
-            print_line("Reading local files...")
-
-            for i in repo_file_events(self.root_path, use_cache):
-                i_for_server = FileItem(i.path, i.checksum, i.size, None)
-                remote.send('file_meta', i_for_server)
-                file_item_map[i.checksum] = i
-
-                n += 1
-                if time() - t0 > UI_UPDATE_TIME:
-                    t0 = time()
-                    print_line("Reading local files... %d" % n)
-        ui.out("Reading local files... %d done\n" % n)
-
-        log.debug("Finished sending index to server")
-        remote.send('done')
-        return file_item_map
-
-    def _send_file(self, file_item, remote):
-        log.debug("uploading file %s, path %r",
-                  file_item.checksum, file_item.path)
-
+    def open_read(self, file_item):
         file_path = path.join(self.root_path, file_item.path)
-        with open(file_path, 'rb') as data_file:
-            remote.send_file(data_file)
+        return open(file_path, 'rb')
 
-    def _recv_file(self, file_item, remote):
-        log.debug("Receiving file %r %r", file_item.path, file_item.checksum)
-
+    def open_write(self, file_item):
         file_path = path.join(self.root_path, file_item.path)
-
         folder_path = path.dirname(file_path)
         if not path.isdir(folder_path):
             os.makedirs(folder_path)
+        return open(file_path, 'wb')
 
-        with open(file_path, 'wb') as local_file:
-            remote.recv_file(local_file)
-
-    def _remove_file(self, file_item):
-        log.debug("Removing file %r", file_item.path)
+    def remove_file(self, file_item):
         os.unlink(path.join(self.root_path, file_item.path))
         folder = path.dirname(file_item.path)
 
@@ -98,7 +62,47 @@ class ClientRepo(object):
             os.rmdir(folder_abs)
             folder = path.dirname(folder)
 
-    def receive_remote_update(self, remote, ui, file_item_map):
+class SyncClient(object):
+    def __init__(self, working_tree, remote, ui=DummyUi()):
+        self.wt = working_tree
+        self.remote = remote
+        self.ui = ui
+
+    def update_last_sync(self, new_value):
+        self.wt.update_last_sync(new_value)
+
+    @contextmanager
+    def connect_to_remote(self, remote_url):
+        log.debug("Connecting to server %r", remote_url)
+        yield pipe_to_remote(remote_url)
+
+    def send_local_status(self, use_cache):
+        log.debug("Sync session, last_sync %r", self.wt.last_sync)
+
+        with self.ui.status_line() as print_line:
+            t0 = time()
+            file_item_map = {}
+            n = 0
+            print_line("Reading local files...")
+
+            for i in self.wt.iter_files(use_cache):
+                i_for_server = FileItem(i.path, i.checksum, i.size, None)
+                self.remote.send('file_meta', i_for_server)
+                file_item_map[i.checksum] = i
+
+                n += 1
+                if time() - t0 > UI_UPDATE_TIME:
+                    t0 = time()
+                    print_line("Reading local files... %d" % n)
+        self.ui.out("Reading local files... %d done\n" % n)
+
+        log.debug("Finished sending index to server")
+        self.remote.send('done')
+        return file_item_map
+
+    def receive_remote_update(self, file_item_map):
+        # TODO the local variables should be instance variables, and
+        # this function needs to be split into many smaller ones.
         t0 = time()
         bytes_up = bytes_down = 0
         files_new = set(); files_del = set()
@@ -107,26 +111,35 @@ class ClientRepo(object):
                     % (pretty_bytes(bytes_up),
                        pretty_bytes(bytes_down)))
 
-        with ui.status_line() as print_line:
+        with self.ui.status_line() as print_line:
             print_line(bytes_msg())
 
             while True:
-                msg, payload = remote.recv()
+                msg, payload = self.remote.recv()
                 if msg == 'sync_complete':
                     break
 
                 elif msg == 'data':
                     file_item = file_item_map[payload]
-                    self._send_file(file_item, remote)
+                    log.debug("uploading file %s, path %r",
+                              file_item.checksum, file_item.path)
+                    with self.wt.open_read(file_item) as data_file:
+                        self.remote.send_file(data_file)
                     bytes_up += file_item.size
 
                 elif msg == 'file_begin':
-                    self._recv_file(payload, remote)
+                    file_item = payload
+                    log.debug("Receiving file %r %r",
+                              file_item.path, file_item.checksum)
+                    with self.wt.open_write(file_item) as local_file:
+                        self.remote.recv_file(local_file)
                     bytes_down += payload.size
                     files_new.add(payload)
 
                 elif msg == 'file_remove':
-                    self._remove_file(payload)
+                    file_item = payload
+                    log.debug("Removing file %r", file_item.path)
+                    self.wt.remove_file(file_item)
                     files_del.add(payload)
 
                 else:
@@ -136,43 +149,42 @@ class ClientRepo(object):
                     t0 = time()
                     print_line(bytes_msg())
 
-        ui.out(bytes_msg() + "\n")
+        self.ui.out(bytes_msg() + "\n")
 
-        assert payload >= self.last_sync
+        assert payload >= self.wt.last_sync
         self.update_last_sync(payload)
         log.debug("Sync complete, now at version %d", payload)
 
-        msg, diff = remote.recv()
+        msg, diff = self.remote.recv()
         assert msg == 'commit_diff'
 
         def print_files_colored(files, color, size=False):
             for i in sorted(files):
-                with ui.colored(color) as color_print:
+                with self.ui.colored(color) as color_print:
                     color_print(' ' + i.path)
                 if size:
-                    ui.out(' %s' % pretty_bytes(i.size))
-                ui.out('\n')
+                    self.ui.out(' %s' % pretty_bytes(i.size))
+                self.ui.out('\n')
 
-        ui.out("Saving changes to server ...\n")
+        self.ui.out("Saving changes to server ...\n")
         print_files_colored(diff['removed'], 'red')
         print_files_colored(diff['added'], 'green', size=True)
-        ui.out("Updating local copy ...\n")
+        self.ui.out("Updating local copy ...\n")
         print_files_colored(files_del, 'red')
         print_files_colored(files_new, 'green', size=True)
-        ui.out("At version %d\n" % payload)
+        self.ui.out("At version %d\n" % payload)
 
-    def sync_with_remote(self, ui=DummyUi(), use_cache=False):
-        with self.connect_to_remote() as remote:
-            remote.send('sync', self.last_sync)
-            msg, payload = remote.recv()
-            assert msg == 'waiting_for_files'
+    def sync_with_remote(self, use_cache=False):
+        self.remote.send('sync', self.wt.last_sync)
+        msg, payload = self.remote.recv()
+        assert msg == 'waiting_for_files'
 
-            file_item_map = self.send_local_status(remote, ui, use_cache)
+        file_item_map = self.send_local_status(use_cache)
 
-            self.receive_remote_update(remote, ui, file_item_map)
+        self.receive_remote_update(file_item_map)
 
-            remote.send('quit')
-            assert remote.recv()[0] == 'bye'
+        self.remote.send('quit')
+        assert self.remote.recv()[0] == 'bye'
 
 def pipe_to_remote(remote_spec):
     hostname, remote_path = remote_spec.split(':')
@@ -218,8 +230,11 @@ def main():
                             filename=path.join(root_path, '.mf', 'debug.log'))
 
         try:
-            ClientRepo(root_path).sync_with_remote(use_cache=args.use_cache,
-                                                   ui=ColorfulUi())
+            wt = WorkingTree(root_path)
+            remote = pipe_to_remote(wt._get_remote_url())
+            ui = ColorfulUi()
+            session = SyncClient(wt, remote, ui)
+            session.sync_with_remote(use_cache=args.use_cache)
         except:
             log.exception("Exception while performing sync")
             raise
