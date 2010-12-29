@@ -15,6 +15,21 @@ UI_UPDATE_TIME = 0.5 # half a second
 
 log = logging.getLogger('magicfolder.client')
 
+def cooldown(interval):
+    from time import time
+    from functools import wraps
+    def decorator(f):
+        class state(object): t0 = 0
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            t = time()
+            if t < state.t0 + interval:
+                return
+            state.t0 = t
+            f(*args, **kwargs)
+        return wrapper
+    return decorator
+
 def client_init(root_path, remote_url):
     os.mkdir(path.join(root_path, '.mf'))
     with open(path.join(root_path, '.mf', 'remote'), 'wb') as f:
@@ -79,8 +94,11 @@ class SyncClient(object):
     def send_local_status(self, use_cache):
         log.debug("Sync session, last_sync %r", self.wt.last_sync)
 
+        @cooldown(UI_UPDATE_TIME)
+        def update_files_ui(n):
+            print_line("Reading local files... %d" % n)
+
         with self.ui.status_line() as print_line:
-            t0 = time()
             file_item_map = {}
             n = 0
             print_line("Reading local files...")
@@ -91,9 +109,7 @@ class SyncClient(object):
                 file_item_map[i.checksum] = i
 
                 n += 1
-                if time() - t0 > UI_UPDATE_TIME:
-                    t0 = time()
-                    print_line("Reading local files... %d" % n)
+                update_files_ui(n)
         self.ui.out("Reading local files... %d done\n" % n)
 
         log.debug("Finished sending index to server")
@@ -103,16 +119,27 @@ class SyncClient(object):
     def receive_remote_update(self, file_item_map):
         # TODO the local variables should be instance variables, and
         # this function needs to be split into many smaller ones.
-        t0 = time()
-        bytes_up = bytes_down = 0
+        bytes_count = {'up': 0, 'down': 0}
         files_new = set(); files_del = set()
         def bytes_msg():
             return ("Transferring... up: %s, down: %s"
-                    % (pretty_bytes(bytes_up),
-                       pretty_bytes(bytes_down)))
+                    % (pretty_bytes(bytes_count['up']),
+                       pretty_bytes(bytes_count['down'])))
 
         with self.ui.status_line() as print_line:
             print_line(bytes_msg())
+
+            @cooldown(UI_UPDATE_TIME)
+            def update_bytes_ui():
+                print_line(bytes_msg())
+
+            def progress_up(n_bytes):
+                bytes_count['up'] += n_bytes
+                update_bytes_ui()
+
+            def progress_down(n_bytes):
+                bytes_count['down'] += n_bytes
+                update_bytes_ui()
 
             while True:
                 msg, payload = self.remote.recv()
@@ -124,16 +151,14 @@ class SyncClient(object):
                     log.debug("uploading file %s, path %r",
                               file_item.checksum, file_item.path)
                     with self.wt.open_read(file_item) as data_file:
-                        self.remote.send_file(data_file)
-                    bytes_up += file_item.size
+                        self.remote.send_file(data_file, progress_up)
 
                 elif msg == 'file_begin':
                     file_item = payload
                     log.debug("Receiving file %r %r",
                               file_item.path, file_item.checksum)
                     with self.wt.open_write(file_item) as local_file:
-                        self.remote.recv_file(local_file)
-                    bytes_down += payload.size
+                        self.remote.recv_file(local_file, progress_down)
                     files_new.add(payload)
 
                 elif msg == 'file_remove':
@@ -144,10 +169,6 @@ class SyncClient(object):
 
                 else:
                     assert False, 'unexpected message %r' % msg
-
-                if time() - t0 > UI_UPDATE_TIME:
-                    t0 = time()
-                    print_line(bytes_msg())
 
         self.ui.out(bytes_msg() + "\n")
 

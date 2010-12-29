@@ -19,16 +19,17 @@ class Remote(object):
             print "error from remote endpoint\n%s" % payload
         return msg, payload
 
-    def send_file(self, src_file):
+    def send_file(self, src_file, progress=lambda b: None):
         while True:
             chunk = src_file.read(CHUNK_SIZE)
             if not chunk:
                 break
             self.send('file_chunk', chunk)
+            progress(len(chunk))
 
         self.send('file_end')
 
-    def recv_file(self, dst_file):
+    def recv_file(self, dst_file, progress=lambda b: None):
         while True:
             msg, payload = self.recv()
             if msg == 'file_end':
@@ -36,6 +37,7 @@ class Remote(object):
 
             assert msg == 'file_chunk'
             dst_file.write(payload)
+            progress(len(payload))
 
     def __iter__(self):
         return self
