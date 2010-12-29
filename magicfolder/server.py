@@ -28,24 +28,43 @@ def server_init(root_path):
     with open(path.join(root_path, 'versions', '0'), 'wb') as f:
         pass
 
-def server_sync(root_path, remote):
-    assert path.isdir(root_path)
-    data_pool = BlobDB(path.join(root_path, 'objects'))
+class Archive(object):
+    def __init__(self, root_path):
+        assert path.isdir(root_path)
+        self.root_path = root_path
+        self.data_pool = BlobDB(path.join(root_path, 'objects'))
 
-    def open_version_index(n, mode):
-        return open(path.join(root_path, 'versions/%d' % n), mode)
+    def open_version_read(self, n):
+        return open(path.join(self.root_path, 'versions/%d' % n), 'rb')
 
+    def open_version_write(self, n):
+        return open(path.join(self.root_path, 'versions/%d' % n), 'wb')
+
+    def get_latest_version(self):
+        versions_path = path.join(self.root_path, 'versions')
+        return max(int(v) for v in os.listdir(versions_path))
+
+    def __contains__(self, checksum):
+        return checksum in self.data_pool
+
+    def read_file(self, checksum):
+        return self.data_pool.read_file(checksum)
+
+    def write_file(self, checksum):
+        return self.data_pool.write_file(checksum)
+
+def server_sync(archive, remote):
+    # TODO refactor this function as a class with several small methods
     msg, payload = remote.recv()
     assert msg == 'sync'
 
-    versions_path = path.join(root_path, 'versions')
-    latest_version = max(int(v) for v in os.listdir(versions_path))
+    latest_version = archive.get_latest_version()
     remote_base_version = payload
 
     log.debug("Begin sync at version %d, client last_sync is %d",
               latest_version, remote_base_version)
 
-    with open_version_index(latest_version, 'rb') as f:
+    with archive.open_version_read(latest_version) as f:
         server_bag = set(read_version_file(f))
 
     if remote_base_version == latest_version:
@@ -55,7 +74,7 @@ def server_sync(root_path, remote):
         remote_outdated = True
         old_bag = set()
         if remote_base_version != 0:
-            with open_version_index(remote_base_version, 'rb') as f:
+            with archive.open_version_read(remote_base_version) as f:
                 old_bag.update(read_version_file(f))
 
     remote.send('waiting_for_files')
@@ -72,11 +91,11 @@ def server_sync(root_path, remote):
         client_bag.add(payload)
 
     for i in client_bag:
-        if i.checksum not in data_pool:
+        if i.checksum not in archive:
             log.debug("Downloading data for %s (size: %r, path: %r)",
                       i.checksum, i.size, i.path)
             remote.send('data', i.checksum)
-            with data_pool.write_file(i.checksum) as bf:
+            with archive.write_file(i.checksum) as bf:
                 remote.recv_file(bf)
 
     if remote_outdated:
@@ -111,11 +130,11 @@ def server_sync(root_path, remote):
 
             log.debug("Client was outdated and had changes, "
                       "creating new version %d", current_version)
-            with open_version_index(current_version, 'wb') as f:
+            with archive.open_version_write(current_version) as f:
                 dump_fileitems(f, new_server_bag)
 
         for removed_file in client_bag - new_server_bag:
-            assert removed_file.checksum in data_pool
+            assert removed_file.checksum in archive
             log.debug("Asking client to remove %s (size: %r, path: %r)",
                       removed_file.checksum, removed_file.size,
                       removed_file.path)
@@ -125,7 +144,7 @@ def server_sync(root_path, remote):
             log.debug("Sending file %s for path %r",
                       new_file.checksum, new_file.path)
             remote.send('file_begin', new_file)
-            with data_pool.read_file(new_file.checksum) as f:
+            with archive.read_file(new_file.checksum) as f:
                 remote.send_file(f)
 
     else:
@@ -137,7 +156,7 @@ def server_sync(root_path, remote):
             current_version = latest_version + 1
             log.debug("Client has changes, creating new version %d",
                       current_version)
-            with open_version_index(current_version, 'wb') as f:
+            with archive.open_version_write(current_version) as f:
                 dump_fileitems(f, client_bag)
 
         new_server_bag = client_bag
@@ -283,4 +302,4 @@ def main():
     remote = picklemsg.Remote(sys.stdin, sys.stdout)
 
     with try_except_send_remote(remote):
-        server_sync(root_path, remote)
+        server_sync(Archive(root_path), remote)

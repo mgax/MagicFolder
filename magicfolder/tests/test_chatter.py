@@ -8,7 +8,7 @@ from collections import deque
 
 from magicfolder.picklemsg import Remote
 from magicfolder.blobdb import BlobDB
-from magicfolder.server import server_sync
+from magicfolder.server import Archive, server_sync
 from magicfolder.checksum import FileItem, read_version_file
 from magicfolder.client import WorkingTree, SyncClient
 
@@ -271,7 +271,7 @@ class ServerChatterTest(unittest.TestCase):
 
     def chat_server(self, test_chat):
         mock_remote = MockRemote(test_chat)
-        server_sync(self.tmp_path, mock_remote)
+        server_sync(Archive(self.tmp_path), mock_remote)
         mock_remote.done()
 
     def test_blank(self):

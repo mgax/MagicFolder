@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from magicfolder.picklemsg import Remote
 from magicfolder.blobdb import BlobDB
 from magicfolder.client import SyncClient, WorkingTree
-from magicfolder.server import server_sync, try_except_send_remote
+from magicfolder.server import Archive, server_sync, try_except_send_remote
 
 def sha1hex(s):
     return sha1(s).hexdigest()
@@ -33,7 +33,7 @@ class TestRemote(Remote):
 def do_server_loop(root_path, in_queue, out_queue):
     remote = TestRemote(in_queue, out_queue)
     with try_except_send_remote(remote):
-        server_sync(root_path, remote)
+        server_sync(Archive(root_path), remote)
 
 def do_client_sync(root_path, in_queue, out_queue):
     remote = TestRemote(in_queue, out_queue)
